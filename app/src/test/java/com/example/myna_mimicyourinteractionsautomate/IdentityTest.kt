@@ -152,3 +152,14 @@ class PickedResultTest {
         assertEquals(null, Identity.pickedResult(menu, "Burger King"))
     }
 }
+
+class PlaceholderTest {
+    @Test fun zomatoPlaceholderTwoLevelsUpIsIgnored() {
+        val field = UiNode(text = "Type to search restaurants or dishes", hint = "Restaurant name or a dish...", id = "edittext", editable = true)
+        UiNode(desc = "Type to search restaurants or dishes", id = "search_edit_text", children = listOf(
+            UiNode(text = "Type to search restaurants or dishes", id = "leftIcon"),
+            UiNode(id = "vsearch_parent", children = listOf(field))))
+        assertTrue(Identity.isPlaceholder(field, "Type to search restaurants or dishes"))
+        assertEquals(false, Identity.isPlaceholder(field, "Domino's"))
+    }
+}

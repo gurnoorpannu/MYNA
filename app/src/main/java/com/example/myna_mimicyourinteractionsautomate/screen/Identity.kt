@@ -128,6 +128,16 @@ object Identity {
             .minByOrNull { it.first.t }?.second
     }
 
+    /**
+     * Zomato writes its placeholder ("Type to search restaurants or dishes") into the field's text,
+     * and repeats it on the search bar around the field. Typed text equal to a label within 3 levels = placeholder.
+     */
+    fun isPlaceholder(field: UiNode, text: String): Boolean {
+        if (text == field.hint || text == field.desc) return true
+        val around = field.ancestors().take(3).lastOrNull() ?: return false
+        return around.walk().filter { it !== field }.any { it.label == text.trim() }
+    }
+
     /** Lowercase letters/digits only: "Domino's Pizza" ~ "dominos pizza". */
     fun loose(s: String) = s.lowercase().filter { it.isLetterOrDigit() }
 

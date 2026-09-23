@@ -157,11 +157,9 @@ class MynaService : AccessibilityService() {
         // Never record what goes into an OTP/password/card field.
         SafetyGate.checkTap(node, root, pkg)?.let { return stopRecording(it) }
         if (src.isPassword) return
-        // Placeholders: real hint, or apps (Zomato) that write the placeholder into the text itself.
-        val placeholders = listOfNotNull(src.hintText, src.contentDescription, src.parent?.contentDescription, src.parent?.text)
-            .map { it.toString() }
         val raw = src.text?.toString().orEmpty()
-        val text = if (src.isShowingHintText || raw in placeholders) "" else raw
+        val text = if (src.isShowingHintText || Identity.isPlaceholder(node, raw)) "" else raw
+        Log.d(TAG, "text raw=\"$raw\" kept=\"$text\"")
         rec.onText(Identity.target(node, root, rec.spoken), text, screenOf(root, pkg))
         updateOverlay()
     }
