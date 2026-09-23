@@ -209,10 +209,8 @@ class MynaService : AccessibilityService(), Device {
     private fun onSettled() {
         if (dumping) dumpScreen("settled", null)
         val rec = recorder ?: return
-        val live = rootInActiveWindow ?: return
-        val pkg = live.packageName?.toString() ?: return
+        val (root, pkg) = captureFront() ?: return
         if (pkg == packageName || pkg == launcherPkg || pkg in IGNORED_PACKAGES) return
-        val root = UiTree.capture(live)
         val screen = inferMissedTap(rec, root, pkg)
         rec.onScreen(screen, Identity.compact(root))
         // Teaching ends by itself at the payment/credential screen, before the user can tap "Place Order".
@@ -251,10 +249,22 @@ class MynaService : AccessibilityService(), Device {
     }
 
     private fun snapshotAround(src: AccessibilityNodeInfo): Pair<UiNode, UiNode>? {
-        val live = src.window?.root ?: rootInActiveWindow ?: return null
-        val root = UiTree.capture(live)
+        val root = captureFront()?.first ?: src.window?.root?.let(UiTree::capture) ?: return null
         val node = UiTree.find(root, src) ?: UiTree.capture(src)
         return root to node
+    }
+
+    /**
+     * Every window of the front app as ONE tree. Bottom sheets, their sticky footers ("Add item ₹109")
+     * and dialogs can be separate windows; the active window alone misses them.
+     */
+    private fun captureFront(): Pair<UiNode, String>? {
+        val active = rootInActiveWindow ?: return null
+        val pkg = active.packageName?.toString() ?: return null
+        val roots = windows.mapNotNull { it.root }.filter { it.packageName?.toString() == pkg }
+        if (roots.size <= 1) return UiTree.capture(active) to pkg
+        val kids = roots.reversed().map(UiTree::capture)   // getWindows() is top-most first; keep screen order bottom → top
+        return UiNode(cls = "Windows", r = kids.maxOf { it.r }, b = kids.maxOf { it.b }, children = kids) to pkg
     }
 
     private fun screenOf(root: UiNode, pkg: String): Screen = Identity.screen(root, pkg, activityOf[pkg])
@@ -423,9 +433,7 @@ class MynaService : AccessibilityService(), Device {
     override suspend fun screen(): Pair<UiNode, String>? {
         delay(250)                 // let the last action's events start arriving
         awaitSettled()
-        val live = rootInActiveWindow ?: return null
-        val pkg = live.packageName?.toString() ?: return null
-        return UiTree.capture(live) to pkg
+        return captureFront()
     }
 
     /** Clean start (design §4.1): Home, then open the app from its launcher entry with a fresh task. */
@@ -534,9 +542,13 @@ class MynaService : AccessibilityService(), Device {
         val root = rootInActiveWindow ?: return
         val stats = TreeDump.Stats()
         val tree = TreeDump.dump(root, stats)
+        // Every window, not just the active one: sheets/footers/dialogs can live in their own window.
+        val all = org.json.JSONArray()
+        windows.forEach { w -> w.root?.let { r -> all.put(JSONObject().put("title", w.title).put("type", w.type).put("layer", w.layer)
+            .put("pkg", r.packageName).put("tree", TreeDump.dump(r))) } }
         val line = JSONObject().put("t", System.currentTimeMillis()).put("event", event)
-            .put("pkg", root.packageName ?: lastPkg).put("stats", stats.toJson()).put("target", extra).put("tree", tree)
+            .put("pkg", root.packageName ?: lastPkg).put("stats", stats.toJson()).put("target", extra).put("tree", tree).put("windows", all)
         dumpFile?.appendText(line.toString() + "\n")
-        Log.i(TAG, "$event ${root.packageName} ${stats.toJson()}")
+        Log.i(TAG, "$event ${root.packageName} ${stats.toJson()} windows=${all.length()}")
     }
 }
