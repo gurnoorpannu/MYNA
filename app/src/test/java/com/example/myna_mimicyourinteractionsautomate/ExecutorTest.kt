@@ -90,6 +90,7 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
     override suspend fun ask(question: String, options: List<String>): String? = null
     override fun say(text: String) {}
     override fun now() = clock.also { clock += 100 }
+    override suspend fun pause(ms: Long) { clock += ms }
     override val stopRequested = false
 
     private fun click(n: UiNode): Boolean {
@@ -103,6 +104,7 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
             n.id == "pizza_hut" -> error("opened the wrong restaurant!")
             n.id == "button_add" -> { sheetFor = n.parent!!.children[2].text!!; state = "sheet" }
             n.cls == "OcrText" && n.text!!.startsWith("Add item") -> { cart += sheetFor!!; state = "menu" }
+            state == "sheet" && n.l == 360 && n.t == 2025 -> { cart += sheetFor!!; state = "menu" }   // the blank button box
             n.id == "cart_bar" -> state = "cart"
             n.id == "cv_checkout_container" -> error("tapped Place Order!")
         }

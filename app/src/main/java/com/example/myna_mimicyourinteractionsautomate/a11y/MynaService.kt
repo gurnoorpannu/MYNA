@@ -357,8 +357,13 @@ class MynaService : AccessibilityService(), Device {
         val live = n.live as? AccessibilityNodeInfo
         if (live?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true) return true
         // Click refused (custom views): tap the centre of its bounds.
-        val path = Path().apply { moveTo((n.l + n.r) / 2f, (n.t + n.b) / 2f) }
-        return dispatchGesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, 60)).build(), null, null)
+        val x = (n.l + n.r) / 2f; val y = (n.t + n.b) / 2f
+        val path = Path().apply { moveTo(x, y) }
+        return dispatchGesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, 80)).build(),
+            object : GestureResultCallback() {
+                override fun onCompleted(g: GestureDescription) { Log.d(TAG, "gesture tap ($x,$y) completed on $n") }
+                override fun onCancelled(g: GestureDescription) { Log.w(TAG, "gesture tap ($x,$y) CANCELLED on $n") }
+            }, null)
     }
 
     /** Only called by [actor], after the gate said yes. */
@@ -517,6 +522,8 @@ class MynaService : AccessibilityService(), Device {
     }
 
     override fun now() = System.currentTimeMillis()
+
+    override suspend fun pause(ms: Long) = delay(ms)
 
     fun requestStop() { stopRequested = true }
 

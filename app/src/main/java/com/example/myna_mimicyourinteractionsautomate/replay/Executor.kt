@@ -26,6 +26,7 @@ interface Device {
     suspend fun ask(question: String, options: List<String>): String?
     fun say(text: String)
     fun now(): Long
+    suspend fun pause(ms: Long)
     val stopRequested: Boolean
 }
 
@@ -217,18 +218,20 @@ class Executor(
 
     /** Press the open sheet's main button (OCR "Add item ₹109", else its blank button box). Done when the sheet is gone. */
     private suspend fun confirmSheet(sl: StepLog) {
+        device.pause(SHEET_ANIMATION_MS)   // sheets slide in; positions read mid-animation miss the button
         for (attempt in 0 until 3) {
             val (root, pkg) = device.screen() ?: throw Stop(Outcome.FAILED, "screen unreadable")
             SafetyGate.check(root, pkg)?.let { device.actor.handOff(it); throw Stop(Outcome.HANDED_OFF, it.reason) }
             if (!Identity.isModal(root)) { sl.status = "ok"; if (attempt == 0) sl.note = "no sheet open"; return }
-            val bottom = root.t + (root.b - root.t) * 3 / 4
-            val line = device.ocr().filter { it.t >= bottom && CONFIRM.containsMatchIn(it.text) }.maxByOrNull { it.r - it.l }
-            val target = line?.let { UiNode(text = it.text, cls = "OcrText", clickable = true, l = it.l, t = it.t, r = it.r, b = it.b) }
-                ?: Identity.blankSheetButton(root)
+            // Tree position first (exact), OCR second (reads pixels, can lag an animation).
+            val box = Identity.blankSheetButton(root)
+            val line = if (box != null) null else device.ocr().filter { it.t >= root.t + (root.b - root.t) * 3 / 4 && CONFIRM.containsMatchIn(it.text) }.maxByOrNull { it.r - it.l }
+            val target = box ?: line?.let { UiNode(text = it.text, cls = "OcrText", clickable = true, l = it.l, t = it.t, r = it.r, b = it.b) }
                 ?: throw Stop(Outcome.STUCK, "couldn't find the button that confirms the options sheet")
-            sl.level = if (line != null) 4 else 2
-            sl.note = "pressed \"${line?.text ?: "sheet button"}\""
+            sl.level = if (box != null) 2 else 4
+            sl.note = "pressed ${line?.text?.let { "\"$it\"" } ?: "the sheet's main button ${box!!.bounds}"} (try ${attempt + 1})"
             if (device.actor.tap(target, root, pkg) is GatedActor.Result.Blocked) throw Stop(Outcome.HANDED_OFF, "blocked on the options sheet")
+            device.pause(SHEET_ANIMATION_MS)
         }
         throw Stop(Outcome.STUCK, "the options sheet didn't close")
     }
@@ -272,6 +275,7 @@ class Executor(
 
     companion object {
         const val MAX_SCROLLS = 5
+        const val SHEET_ANIMATION_MS = 800L
         private val CONFIRM = Regex("^(add item|add to cart|add|done|confirm|continue|save|apply|update)\\b", RegexOption.IGNORE_CASE)
         private val CHECKOUT = Regex("^(view cart|go to cart|checkout|proceed to checkout|proceed to buy|continue to checkout|continue)\\b", RegexOption.IGNORE_CASE)
         const val SAME_SCREEN_LIMIT = 3 + MAX_SCROLLS + 2   // scrolls/pop-up retries legitimately revisit a screen
