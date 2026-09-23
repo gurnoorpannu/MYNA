@@ -49,21 +49,22 @@ import com.example.myna_mimicyourinteractionsautomate.ui.theme.Line
 import com.example.myna_mimicyourinteractionsautomate.ui.theme.Ok
 import com.example.myna_mimicyourinteractionsautomate.ui.theme.Warn
 
-/** The big mic from the sketch. Pulses while MYNA is listening or thinking. */
+/** The big mic from the sketch. Turns green while listening; pulses while listening or thinking. */
 @Composable
-fun MicHero(busy: Boolean, caption: String, onTap: () -> Unit) {
+fun MicHero(busy: Boolean, listening: Boolean, caption: String, onTap: () -> Unit) {
+    val accent by androidx.compose.animation.animateColorAsState(if (listening) Ok else Ink, label = "mic colour")
     val pulse by rememberInfiniteTransition(label = "mic").animateFloat(
-        initialValue = 1f, targetValue = if (busy) 1.06f else 1f,
+        initialValue = 1f, targetValue = if (busy || listening) 1.06f else 1f,
         animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "pulse")
     Box(
         Modifier.size(248.dp).scale(pulse).clip(CircleShape)
-            .background(Brush.radialGradient(listOf(Card, Color.White)))
-            .border(2.dp, Ink, CircleShape)
+            .background(Brush.radialGradient(listOf(if (listening) Ok.copy(alpha = 0.12f) else Card, Color.White)))
+            .border(if (listening) 3.dp else 2.dp, accent, CircleShape)
             .clickable(onClick = onTap),
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(Modifier.size(84.dp).clip(CircleShape).background(Ink), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(84.dp).clip(CircleShape).background(accent), contentAlignment = Alignment.Center) {
                 androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(com.example.myna_mimicyourinteractionsautomate.R.drawable.mic),
                     "Speak", Modifier.size(40.dp), tint = Color.White)
             }

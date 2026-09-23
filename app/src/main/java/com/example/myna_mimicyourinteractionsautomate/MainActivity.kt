@@ -116,6 +116,7 @@ class MainActivity : ComponentActivity() {
     private val chat = mutableStateListOf<String>()
     private var pending by mutableStateOf<IntentMatcher.Decision?>(null)
     private var thinking by mutableStateOf(false)
+    private var listening by mutableStateOf(false)   // speech input open: the mic circle turns green
 
     private companion object {
         val PING_SCHEMA = JSONObject("""{"type":"object","required":["reply"],"properties":{"reply":{"type":"string"}}}""")
@@ -221,16 +222,20 @@ class MainActivity : ComponentActivity() {
         val scope = rememberCoroutineScope()
         var input by remember { mutableStateOf("") }
         val listen = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+            listening = false
             res.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { heard -> input = ""; scope.launch { onUserSaid(heard) } }
         }
-        val listenNow = { runCatching { listen.launch(speechIntent(if (pending != null) "Your answer" else "What should I do?")) } }
+        val listenNow = {
+            listening = true
+            runCatching { listen.launch(speechIntent(if (pending != null) "Your answer" else "What should I do?")) }.onFailure { listening = false }
+        }
         // When MYNA asks something, listen for the reply once it has finished speaking.
         val asking = pending
         LaunchedEffect(asking) { if (asking != null) { kotlinx.coroutines.delay(2_500); if (pending === asking) listenNow() } }
 
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            MicHero(busy = thinking || pending != null,
-                caption = when { thinking -> "Thinking…"; pending != null -> "Tap to answer"; else -> "What do you want to do with MYNA today?" },
+            MicHero(busy = thinking || pending != null, listening = listening,
+                caption = when { listening -> "Listening…"; thinking -> "Thinking…"; pending != null -> "Tap to answer"; else -> "What do you want to do with MYNA today?" },
                 onTap = { listenNow() })
         }
         chat.takeLast(4).forEach { Bubble(it.substringAfter(": "), mine = it.startsWith("You")) }
