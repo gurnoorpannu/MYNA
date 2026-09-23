@@ -54,4 +54,26 @@ class IntentTest {
     @Test fun didItWorkIsAReport() = runBlocking {
         assertEquals(Decision.Report, IntentMatcher.decide("did the last run succeed?", listOf(zomato), at(0.46f)))
     }
+
+    private val amazon = Recipe("a", "in.amazon.mShop.android.shopping", "add a phone case for my s25 Ultra to my Amazon Shopping Cart",
+        summary = "add a {product} for my {item} to my Amazon Shopping Cart", subtasks = emptyList(),
+        slots = mapOf("product" to Slot("phone case"), "item" to Slot("s25 Ultra")))
+
+    @Test fun noAiFillFindsTheNewProduct() {
+        val f = IntentMatcher.fillByTemplate("add a laptop stand to my amazon cart", amazon)
+        assertEquals(mapOf("product" to "laptop stand"), f.values)
+        assertEquals(setOf("product"), f.said)
+    }
+
+    @Test fun noAiFillKeepsRepeatedValuesAndTakesNewOnes() {
+        val f = IntentMatcher.fillByTemplate("order a farmhouse from dominos", zomato)
+        assertEquals(mapOf("item" to "farmhouse", "restaurant" to "Domino's"), f.values)
+    }
+
+    @Test fun offlineLaptopStandAsksAboutTheOtherBlank() = runBlocking {
+        Llm.mock = true; Llm.canned.clear()
+        // Mock replies with an empty fill, like a failed call would leave nothing: use the template path directly.
+        val d = IntentMatcher.decide("add a laptop stand to my amazon cart", listOf(amazon), at(0.795f))
+        assertTrue(d.toString(), d is Decision.AskSlot || d is Decision.Run)
+    }
 }

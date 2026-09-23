@@ -178,6 +178,7 @@ class MainActivity : ComponentActivity() {
                 myna("Great. Pick the app below, tap Teach, and show me once.")
             } else myna("No problem.")
             NO.matches(text.trim()) -> myna("Okay.")
+            YES.matches(text.trim().trimEnd('.', '!')) -> myna("There's nothing waiting for a yes. Tell me what to do.")
             else -> command(text)
         }
     }
