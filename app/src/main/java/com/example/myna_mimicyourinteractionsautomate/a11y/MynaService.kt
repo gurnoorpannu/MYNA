@@ -22,7 +22,10 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.Toast
 import com.example.myna_mimicyourinteractionsautomate.MainActivity
+import com.example.myna_mimicyourinteractionsautomate.recipe.KeyKind
 import com.example.myna_mimicyourinteractionsautomate.recipe.RecipeJson
+import com.example.myna_mimicyourinteractionsautomate.recipe.Target
+import com.example.myna_mimicyourinteractionsautomate.recipe.UniqueKey
 import com.example.myna_mimicyourinteractionsautomate.recipe.Screen
 import com.example.myna_mimicyourinteractionsautomate.recipe.SystemKey
 import com.example.myna_mimicyourinteractionsautomate.record.Recorder
@@ -154,7 +157,11 @@ class MynaService : AccessibilityService() {
         // Never record what goes into an OTP/password/card field.
         SafetyGate.checkTap(node, root, pkg)?.let { return stopRecording(it) }
         if (src.isPassword) return
-        val text = if (src.isShowingHintText) "" else src.text?.toString().orEmpty()
+        // Placeholders: real hint, or apps (Zomato) that write the placeholder into the text itself.
+        val placeholders = listOfNotNull(src.hintText, src.contentDescription, src.parent?.contentDescription, src.parent?.text)
+            .map { it.toString() }
+        val raw = src.text?.toString().orEmpty()
+        val text = if (src.isShowingHintText || raw in placeholders) "" else raw
         rec.onText(Identity.target(node, root, rec.spoken), text, screenOf(root, pkg))
         updateOverlay()
     }
@@ -176,7 +183,15 @@ class MynaService : AccessibilityService() {
         // New activity but no step since the last settled screen → the app ate the click event.
         val prev = prevSettled
         if (prev != null && rec.steps.size == stepsAtPrevSettle && screen.title != prev.second.title) {
-            Identity.inferTap(prev.first, root)?.let { rec.onInferredTap(Identity.target(it, prev.first, rec.spoken), prev.second) }
+            val tapped = Identity.inferTap(prev.first, root)
+            if (tapped != null) {
+                rec.onInferredTap(Identity.target(tapped, prev.first, rec.spoken), prev.second)
+            } else {
+                // List invisible to accessibility (Compose): name the pick from the new screen; replay finds it by OCR.
+                rec.lastTyped?.let { Identity.pickedResult(root, it) }?.let { name ->
+                    rec.onInferredTap(Target(label = name, key = UniqueKey(KeyKind.OCR, name)), prev.second)
+                }
+            }
         }
         prevSettled = root to screen
         stepsAtPrevSettle = rec.steps.size

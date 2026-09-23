@@ -116,6 +116,21 @@ object Identity {
         return best.first.takeIf { specific.count { it.second == best.second } == 1 && prevTexts.isNotEmpty() }
     }
 
+    /**
+     * Fallback when the tapped list has no accessible text (Zomato's Compose suggestions):
+     * after typing [query], the new screen names what was picked. Returns the topmost text on
+     * [next] that contains the query ("Domino's" → "Domino's Pizza").
+     */
+    fun pickedResult(next: UiNode, query: String): String? {
+        val q = loose(query).takeIf { it.length >= 2 } ?: return null
+        return next.walk().filter { it.visible && !it.editable }
+            .mapNotNull { n -> n.label?.let(::norm)?.takeIf { isStable(it) && loose(it).contains(q) }?.let { n to it } }
+            .minByOrNull { it.first.t }?.second
+    }
+
+    /** Lowercase letters/digits only: "Domino's Pizza" ~ "dominos pizza". */
+    fun loose(s: String) = s.lowercase().filter { it.isLetterOrDigit() }
+
     /** "hi" when ≥20% of letters on screen are Devanagari (dish/brand names often stay English), else "en". */
     fun lang(root: UiNode): String {
         var letters = 0; var deva = 0

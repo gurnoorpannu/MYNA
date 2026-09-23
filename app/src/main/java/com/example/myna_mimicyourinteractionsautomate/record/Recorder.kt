@@ -38,6 +38,9 @@ class Recorder(
     fun onInferredTap(target: Target, screen: Screen) =
         add(Step(StepType.TAP, target = target, screen = screen, why = "inferred: app sent no click event"))
 
+    /** The query typed just before, if the last step was typing — used to name a picked search result. */
+    val lastTyped: String? get() = steps.lastOrNull()?.takeIf { it.type == StepType.TYPE }?.text
+
     fun onTap(target: Target, screen: Screen) {
         val last = steps.lastOrNull()
         val t = now()

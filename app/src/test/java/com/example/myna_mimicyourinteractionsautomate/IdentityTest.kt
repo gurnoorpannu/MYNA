@@ -137,3 +137,18 @@ class InferTapTest {
         assertEquals(null, Identity.inferTap(suggestions, UiNode(children = listOf(UiNode(text = "Back", clickable = true)))))
     }
 }
+
+class PickedResultTest {
+    // Zomato menu page after picking "Domino's Pizza" from a Compose (text-less) suggestion list.
+    private val menu = UiNode(cls = "ScrollView", children = listOf(
+        UiNode(desc = "Domino's Pizza", id = "title", cls = "View", t = 200),
+        UiNode(desc = "7.6 km · Ranjit Avenue", cls = "View", t = 260),
+        UiNode(text = "Search in Domino's Pizza", hint = "Search", cls = "EditText", editable = true, t = 900),
+        UiNode(desc = "Farmhouse Pizza + Classic Stuffed Garlic Bread", cls = "View", t = 1400)))
+
+    @Test fun namesTheResultFromTheNextScreen() {
+        assertEquals("Domino's Pizza", Identity.pickedResult(menu, "Domino's"))
+        assertEquals("Domino's Pizza", Identity.pickedResult(menu, "dominos"))
+        assertEquals(null, Identity.pickedResult(menu, "Burger King"))
+    }
+}
