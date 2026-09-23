@@ -159,9 +159,16 @@ class MainActivity : ComponentActivity() {
         var open by remember(r.id) { mutableStateOf(false) }
         val values = remember(r.id) { r.slots.mapValues { mutableStateOf(it.value.value.orEmpty()) } }
         HorizontalDivider()
+        val steps = r.subtasks.sumOf { s -> s.steps.count { !it.noise } }
+        var confirmDelete by remember(r.id) { mutableStateOf(false) }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text((if (r.golden) "★ " else "") + (r.summary ?: r.utterance), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+            Text((if (r.golden) "★ " else "") + (r.summary ?: r.utterance) + "  · $steps steps · ${r.app.substringAfterLast('.')}",
+                Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
             Button(onClick = { save(r.copy(golden = !r.golden)) }) { Text(if (r.golden) "Unstar" else "★") }
+            // Two taps to delete: a recipe can't be recovered.
+            Button(onClick = {
+                if (confirmDelete) { Recipes(File(getExternalFilesDir(null), "recipes")).delete(r.id); refresh() } else confirmDelete = true
+            }) { Text(if (confirmDelete) "Sure?" else "🗑") }
         }
         values.forEach { (name, v) ->
             OutlinedTextField(v.value, { v.value = it }, Modifier.fillMaxWidth(), label = { Text("{$name}") },

@@ -14,6 +14,8 @@ class Recipes(private val dir: File) {
 
     fun golden() = all().filter { it.golden }
 
+    fun delete(id: String) = File(dir, "$id.json").delete()
+
     companion object {
         /** Until the compiler (Phase 4) exists: a recording replayed as-is, mistakes dropped. */
         fun fromRecording(r: Recording, golden: Boolean = false) = Recipe(
