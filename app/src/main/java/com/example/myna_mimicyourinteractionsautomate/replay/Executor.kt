@@ -56,7 +56,8 @@ class Executor(
             // The row: go up until the subtree has real text besides the button itself.
             val row = n.ancestors().take(4).firstOrNull { a -> a.walk().any { it !== n && (it.label?.length ?: 0) >= 12 } } ?: return@mapNotNull null
             val text = row.walk().mapNotNull { it.label }.joinToString(" ")
-            if (row.walk().any { c -> c.label?.let(AD::containsMatchIn) == true }) return@mapNotNull null
+            // A sponsored PRODUCT with its own Add to cart is still that product (23 Sep: the only visible stand
+            // was "Sponsored Ad - Adjustable Laptop Stand…"). Banners never have these buttons, so they can't match.
             val flat = Identity.loose(text)
             n to want.count { w -> Identity.loose(w).let { it.isNotEmpty() && flat.contains(it) } }
         }.filter { it.second > 0 }.maxByOrNull { it.second }?.first

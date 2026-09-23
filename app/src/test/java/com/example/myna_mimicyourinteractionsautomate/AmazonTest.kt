@@ -41,7 +41,10 @@ class FakeAmazon : Device {
                 UiNode(clickable = true, t = 210, b = 290, children = listOf(UiNode(text = "Sponsored"), UiNode(text = "Shop Spigen cases for Galaxy S25 Ultra, top rated"))),
             ) + catalog.mapIndexed { i, p -> UiNode(t = 300 + i * 300, b = 580 + i * 300, children = listOf(
                 link("Go to detail page for \"$p\"", 300 + i * 300),
-                UiNode(text = "Add to cart", cls = "Button", clickable = true, t = 500 + i * 300, b = 560 + i * 300, r = 300))) }), tabs()))
+                UiNode(text = "Add to cart", cls = "Button", clickable = true, t = 500 + i * 300, b = 560 + i * 300, r = 300))) } +
+                // 23 Sep: the stand on screen was a sponsored product with its own Add to cart.
+                UiNode(t = 1500, b = 1800, children = listOf(UiNode(text = "Sponsored Ad - Plixio Adjustable Laptop Stand with 360° Rotating Base", t = 1500, b = 1560),
+                    UiNode(text = "Add to cart", cls = "Button", clickable = true, t = 1700, b = 1760, r = 300)))), tabs()))
         // The product page is a web page: nothing marked scrollable, and Add to cart is below the fold.
         "product" -> UiNode(b = 2340, children = listOfNotNull(UiNode(text = product, t = 200, b = 300),
             if (scrolled) link("Add to cart", 1500) else null, link("Buy Now", 1600).takeIf { scrolled }, tabs()))
@@ -57,7 +60,7 @@ class FakeAmazon : Device {
         when {
             n.id == "chrome_search" -> state = "typing"
             state == "results" && n.text?.startsWith("Go to detail page") == true -> { product = n.text.substringAfter("\"").substringBefore("\""); scrolled = false; state = "product" }
-            n.text == "Add to cart" && state == "results" -> cart += n.parent!!.children[0].text!!.substringAfter("\"").substringBefore("\"")
+            n.text == "Add to cart" && state == "results" -> cart += n.parent!!.children[0].text!!.let { if ('"' in it) it.substringAfter("\"").substringBefore("\"") else it }
             state == "results" && n.id != "cart_tab" -> error("opened the ad: $n text=${n.text} bounds=${n.bounds}")
             n.text == "Add to cart" -> cart += product
             n.id == "cart_tab" -> state = "cart"
