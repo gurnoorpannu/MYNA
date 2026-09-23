@@ -98,7 +98,8 @@ fun AppBadge(pkg: String) {
 
 /** One pinned automation in the Home grid. */
 @Composable
-fun AutomationCard(title: String, pkg: String, enabled: Boolean, onRun: () -> Unit, onSteps: () -> Unit, modifier: Modifier = Modifier) {
+fun AutomationCard(title: String, pkg: String, enabled: Boolean, onRun: () -> Unit, onSteps: () -> Unit, onChange: (() -> Unit)?,
+                   modifier: Modifier = Modifier) {
     Column(modifier.clip(RoundedCornerShape(22.dp)).background(Card).border(1.dp, Line, RoundedCornerShape(22.dp)).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
         AppBadge(pkg)
@@ -106,9 +107,19 @@ fun AutomationCard(title: String, pkg: String, enabled: Boolean, onRun: () -> Un
             modifier = Modifier.height(62.dp))
         // Half-screen cards: compact buttons that share the row (full-size ones squash "Steps" into a column).
         val compact = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 6.dp)
+        // Black text and outline on the secondary buttons (the default tint read as grey).
+        val outlined = ButtonDefaults.outlinedButtonColors(contentColor = Color.Black)
+        val edge = androidx.compose.foundation.BorderStroke(1.dp, Ink)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Button(onRun, Modifier.weight(1f), enabled = enabled, shape = RoundedCornerShape(12.dp), contentPadding = compact) { Text("Run", maxLines = 1) }
-            OutlinedButton(onSteps, Modifier.weight(1f), shape = RoundedCornerShape(12.dp), contentPadding = compact) { Text("Steps", maxLines = 1) }
+            OutlinedButton(onSteps, Modifier.weight(1f), shape = RoundedCornerShape(12.dp), contentPadding = compact, colors = outlined, border = edge) {
+                Text("Steps", maxLines = 1, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        // Same width as Run + Steps together: change the blanks (item, restaurant…) before running.
+        if (onChange != null) OutlinedButton(onChange, Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), contentPadding = compact,
+            colors = outlined, border = edge) {
+            Text("Make slight changes", maxLines = 1, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }

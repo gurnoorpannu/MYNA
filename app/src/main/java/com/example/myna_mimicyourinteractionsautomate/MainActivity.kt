@@ -110,6 +110,7 @@ class MainActivity : ComponentActivity() {
     private var openRecipe by mutableStateOf<Recipe?>(null)
     private var openRun by mutableStateOf<RunLog?>(null)
     private var settingsOpen by mutableStateOf(false)
+    private var customizing by mutableStateOf<Recipe?>(null)
 
     // Ask MYNA (Phase 5) conversation state
     private val chat = mutableStateListOf<String>()
@@ -160,6 +161,7 @@ class MainActivity : ComponentActivity() {
         openRecipe?.let { RecipeSheet(it) }
         openRun?.let { RunSheet(it) }
         if (settingsOpen) SettingsSheet()
+        customizing?.let { CustomizeSheet(it) }
     }
 
     @Composable
@@ -201,7 +203,8 @@ class MainActivity : ComponentActivity() {
         pinned.chunked(2).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 row.forEach { r ->
-                    AutomationCard(title(r), r.app, serviceOn, onRun = { replay(listOf(r)) }, onSteps = { openRecipe = r }, modifier = Modifier.weight(1f))
+                    AutomationCard(title(r), r.app, serviceOn, onRun = { replay(listOf(r)) }, onSteps = { openRecipe = r },
+                        onChange = { customizing = r }.takeIf { r.slots.isNotEmpty() }, modifier = Modifier.weight(1f))
                 }
                 if (row.size == 1) Spacer(Modifier.weight(1f))
             }
@@ -406,6 +409,44 @@ class MainActivity : ComponentActivity() {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Button({ openRecipe = null; replay(listOf(r)) }, enabled = serviceOn, shape = RoundedCornerShape(12.dp)) { Text("Run", maxLines = 1) }
                     OutlinedButton({ save(r.copy(golden = !r.golden)) }, shape = RoundedCornerShape(12.dp)) { Text(if (r.golden) "Remove from Home" else "Add to Home", maxLines = 1) }
+                }
+            }
+        }
+    }
+
+    /** "Make slight changes": the recipe's blanks as friendly fields, run once or save as the new usual. */
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    private fun CustomizeSheet(r: Recipe) {
+        val values = remember(r.id) { r.slots.mapValues { mutableStateOf(it.value.value ?: it.value.default.orEmpty()) } }
+        ModalBottomSheet({ customizing = null }, containerColor = MaterialTheme.colorScheme.background) {
+            Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                AppBadge(r.app)
+                Text("Make slight changes", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                // Live preview of what will run.
+                Text(Slots.fill(r.summary ?: r.utterance, values.mapValues { it.value.value })!!.replaceFirstChar { it.uppercase() }, color = InkSoft)
+                values.forEach { (name, v) ->
+                    OutlinedTextField(v.value, { v.value = it }, Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(14.dp),
+                        label = { Text(name.replace('_', ' ').replaceFirstChar { it.uppercase() }) },
+                        placeholder = { Text("Leave empty to skip it") })
+                    // Other options MYNA saw on screen while learning (e.g. other pizzas on the menu).
+                    r.slots[name]?.neighbours?.filter { it != v.value }?.take(6)?.takeIf { it.isNotEmpty() }?.let { opts ->
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            opts.forEach { o ->
+                                Text(o, Modifier.clip(RoundedCornerShape(14.dp)).border(1.dp, Line, RoundedCornerShape(14.dp))
+                                    .clickable { v.value = o }.padding(horizontal = 10.dp, vertical = 6.dp), style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button({ customizing = null; replay(listOf(r), values.mapValues { it.value.value }) }, Modifier.weight(1f),
+                        enabled = serviceOn, shape = RoundedCornerShape(12.dp)) { Text("Run with these", maxLines = 1) }
+                    OutlinedButton({
+                        save(r.copy(slots = r.slots.mapValues { (k, s) -> s.copy(value = values[k]?.value?.takeIf { it.isNotBlank() } ?: s.value) }))
+                        customizing = null
+                    }, Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) { Text("Save as usual", maxLines = 1) }
                 }
             }
         }
