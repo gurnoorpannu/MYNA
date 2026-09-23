@@ -96,6 +96,7 @@ data class UniqueKey(val by: KeyKind, val value: String)
 @Serializable
 enum class KeyKind {
     @SerialName("label") LABEL, @SerialName("id") ID, @SerialName("child_text") CHILD_TEXT,
+    @SerialName("near_text") NEAR_TEXT,   // unique text on the same card/row ("Add" next to "Margherita")
     @SerialName("ocr") OCR, @SerialName("position") POSITION,
 }
 
@@ -128,4 +129,5 @@ data class Recording(
     val startedAt: Long,
     val steps: List<Step>,
     val stoppedBy: String = "user",                   // "user" | "safety_gate"
+    val snapshots: Map<String, String> = emptyMap(),  // screen signature → compact screen text
 )
