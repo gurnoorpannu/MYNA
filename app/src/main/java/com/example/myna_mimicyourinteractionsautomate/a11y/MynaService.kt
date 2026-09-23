@@ -144,8 +144,11 @@ class MynaService : AccessibilityService(), Device {
         val pkg = e.packageName?.toString() ?: return
         if (pkg == packageName || pkg in IGNORED_PACKAGES || pkg in imePkgs) return
         // Debug: which events does a tap inside a web page produce? (content/scroll noise skipped)
-        if (recorder != null && e.eventType !in NOISY_EVENTS)
-            Log.d(TAG, "ev ${AccessibilityEvent.eventTypeToString(e.eventType)} ${e.className} \"${e.text.joinToString(" ").take(60)}\" desc=${e.contentDescription?.take(40)}")
+        if (recorder != null && e.eventType !in NOISY_EVENTS) {
+            val line = "${System.currentTimeMillis()} $pkg ${AccessibilityEvent.eventTypeToString(e.eventType)} ${e.className} " +
+                "\"${e.text.joinToString(" ").take(80)}\" desc=${e.contentDescription?.take(60)} src=${e.source?.let { "${it.className}/${it.viewIdResourceName}/${it.text?.take(40)}" }}"
+            File(getExternalFilesDir(null), "events.log").appendText(line + "\n")   // logcat's buffer is too small
+        }
         when (e.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
                 onWindow(pkg, e.className?.toString())
