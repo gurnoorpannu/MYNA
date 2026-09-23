@@ -82,7 +82,7 @@ class Executor(
         var checkoutTaps = 0
         if (recipe.end == End.PAYMENT_SCREEN) for (i in 0 until 6) {
             if (SafetyGate.check(root, pkg) != null) break
-            val close = Finder.closeButton(root)
+            val close = Finder.closeButton(root, anywhere = true) ?: if (i > 0) ocrClose(root) else null
             val next = root.walk().firstOrNull { n -> n.visible && n.clickable && n.walk().any { c -> c.label?.let(CHECKOUT::containsMatchIn) == true } }
             when {
                 close != null -> {
@@ -265,6 +265,13 @@ class Executor(
             }
         } finally { device.prompt(null) }
         throw Stop(Outcome.STUCK, "the options sheet needs your tap and nobody tapped it within ${USER_TAP_WAIT_MS / 1000} seconds")
+    }
+
+    /** Last resort for a ✕ only the pixels show: a lone "X"/"×" in the top third of the screen. */
+    private suspend fun ocrClose(root: UiNode): UiNode? {
+        val top = root.t + (root.b - root.t) / 3
+        return device.ocr().firstOrNull { it.t < top && it.text.trim() in setOf("X", "x", "×", "✕", "✖") }
+            ?.let { UiNode(text = "×", cls = "OcrText", clickable = true, l = it.l, t = it.t, r = it.r, b = it.b) }
     }
 
     /** Habit defaults: make the sheet show the same options as the demo (required groups block "Add item" otherwise). */

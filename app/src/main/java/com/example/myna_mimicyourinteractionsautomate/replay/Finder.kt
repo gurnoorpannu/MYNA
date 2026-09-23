@@ -105,10 +105,34 @@ object Finder {
     /** Pop-up rule (T7): only close-type buttons. Never the pop-up's main action. */
     private val CLOSE = Regex("^(x|×|✕|✖|close|dismiss|not now|skip|no thanks|no, thanks|maybe later|later|cancel)$", RegexOption.IGNORE_CASE)
 
-    fun closeButton(root: UiNode): UiNode? = visible(root).firstOrNull { n ->
+    /** [anywhere]: also look for a ✕ icon when no dialog/sheet is detected (end-of-run cleanup only). */
+    fun closeButton(root: UiNode, anywhere: Boolean = false): UiNode? = visible(root).firstOrNull { n ->
         n.clickable && (n.label?.let { CLOSE.matches(it) } == true ||
             // Not "cross"/"cancel" ids: Zomato's iconCross clears the search text.
             n.id?.let { Regex("close|dismiss", RegexOption.IGNORE_CASE).containsMatchIn(it) } == true)
+    } ?: closeIcon(root, anywhere)
+
+    private val NOT_CLOSE = Regex("share|collection|bookmark|fav|wish|cart|search|menu|back|more|profile|filter|sort|info|help|edit|mic|voice|scan|camera",
+        RegexOption.IGNORE_CASE)
+
+    /**
+     * A ✕ drawn as an icon (no text, or only an icon-font glyph; ids vary per pop-up): small, square-ish, tappable,
+     * in the top-right of the topmost pop-up/screen. Never an icon with a telling id/desc (share, cart…) and never
+     * one beside a text field (search boxes have a clear-✕).
+     */
+    fun closeIcon(root: UiNode, anywhere: Boolean = false): UiNode? {
+        val box = visible(root).lastOrNull { it.cls?.let { c -> c.contains("Dialog") || c.contains("BottomSheet") } == true || it.id == "design_bottom_sheet" }
+            ?: if (anywhere || Identity.isModal(root)) root else return null   // normal pages have unlabeled top-right icons too
+        val (w, h) = (box.r - box.l) to (box.b - box.t)
+        if (w <= 0 || h <= 0) return null
+        return box.walk().filter { n ->
+            val nw = n.r - n.l; val nh = n.b - n.t
+            n.visible && n.clickable && nw in 24..180 && nh in 24..180 && nw < nh * 2 && nh < nw * 2 &&
+                n.label == null && n.walk().drop(1).none { it.label != null } &&
+                n.t < box.t + h * 0.3 && n.l > box.l + w * 0.6 &&
+                listOfNotNull(n.id, n.desc).none(NOT_CLOSE::containsMatchIn) &&
+                n.parent?.walk()?.none { it.editable } != false
+        }.minByOrNull { it.t }   // the highest one: ✕ sits at the very top
     }
 
     fun similarity(a: String, b: String): Double {

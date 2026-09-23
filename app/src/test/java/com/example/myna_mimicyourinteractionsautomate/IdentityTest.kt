@@ -280,3 +280,33 @@ class SheetTest {
         assertEquals(listOf(360, 2025, 1046, 2171), Identity.blankSheetButton(sheet)?.bounds)
     }
 }
+
+
+class CloseIconTest {
+    private fun btn(text: String?, id: String?, l: Int, t: Int, size: Int = 90, desc: String? = null) =
+        UiNode(text = text, id = id, desc = desc, clickable = true, l = l, t = t, r = l + size, b = t + size)
+
+    // A new-style coupon dialog: glyph-only ✕ with a random id, top-right; big main action at the bottom.
+    private val coupon = UiNode(cls = "FrameLayout", r = 1080, b = 2340, children = listOf(
+        UiNode(cls = "Dialog", l = 60, t = 700, r = 1020, b = 1600, children = listOf(
+            btn("\ue921", "iv_x_7", 900, 730),
+            UiNode(text = "Coupon not applied", l = 100, t = 800, r = 800, b = 860),
+            UiNode(text = "Apply coupon", cls = "Button", clickable = true, l = 100, t = 1450, r = 980, b = 1550)))))
+
+    @Test fun glyphXInTopRightOfDialogIsTheClose() {
+        assertEquals("iv_x_7", com.example.myna_mimicyourinteractionsautomate.replay.Finder.closeButton(coupon)?.id)
+    }
+
+    @Test fun shareIconsAndSearchClearAreNever() {
+        val sheet = UiNode(cls = "FrameLayout", r = 1080, b = 2340, children = listOf(
+            btn(null, "share_container", 957, 464), btn(null, "collection_icon", 822, 453),
+            UiNode(cls = "LinearLayout", l = 100, t = 100, r = 1080, b = 200, children = listOf(
+                UiNode(editable = true, l = 100, t = 100, r = 900, b = 200), btn("\ue921", "icon_x", 950, 110)))))
+        assertEquals(null, com.example.myna_mimicyourinteractionsautomate.replay.Finder.closeButton(sheet, anywhere = true))
+    }
+
+    @Test fun plainPageTopRightIconIsNotAClose() {
+        val page = UiNode(cls = "FrameLayout", r = 1080, b = 2340, children = listOf(btn(null, "riv_right", 950, 150)))
+        assertEquals(null, com.example.myna_mimicyourinteractionsautomate.replay.Finder.closeButton(page))
+    }
+}
