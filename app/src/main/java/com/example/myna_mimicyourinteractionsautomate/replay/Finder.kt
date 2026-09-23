@@ -158,7 +158,8 @@ object Finder {
 object Slots {
     private val REF = Regex("\\{(\\w+)\\}")
 
-    fun fill(s: String?, values: Map<String, String>): String? = s?.let { REF.replace(it) { m -> values[m.groupValues[1]] ?: m.value } }
+    fun fill(s: String?, values: Map<String, String>): String? =
+        s?.let { REF.replace(it) { m -> values[m.groupValues[1]] ?: m.value }.replace(Regex("\\s{2,}"), " ").trim() }
 
     fun bind(t: Target, values: Map<String, String>): Target = if (values.isEmpty()) t else t.copy(
         label = fill(t.label, values),

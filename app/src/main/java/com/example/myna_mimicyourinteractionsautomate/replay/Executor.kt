@@ -50,8 +50,8 @@ class Executor(
     private var unsubmitted: String? = null
 
     suspend fun run(recipe: Recipe, given: Map<String, String> = emptyMap()): RunLog {
-        // Unsaid blanks fall back to the demo's value / default ("Margherita", qty 1…).
-        val slots = recipe.slots.mapNotNull { (k, v) -> (v.value ?: v.default)?.let { k to it } }.toMap() + given.filterValues { it.isNotBlank() }
+        // Blanks not given fall back to the demo's value / default ("Margherita", qty 1…); given "" = leave it out.
+        val slots = recipe.slots.mapNotNull { (k, v) -> (v.value ?: v.default)?.let { k to it } }.toMap() + given
         val log = RunLog(recipe.id, recipe.utterance, device.now())
         val steps = recipe.subtasks.flatMap { it.steps }.filter { !it.noise }
         try {
@@ -124,6 +124,7 @@ class Executor(
             StepType.TAP, StepType.TYPE -> act(step, slots, sl)
             StepType.GOAL -> when (step.goal) {
                 "search" -> search(step, slots, sl)
+                "pick_result" -> pickResult(Slots.fill(step.args["query"], slots).orEmpty(), step, sl)
                 "confirm_sheet" -> confirmSheet(sl, step.args["choices"]?.split(com.example.myna_mimicyourinteractionsautomate.record.Recorder.CHOICE_SEP).orEmpty())
                 else -> { sl.status = "skipped"; sl.note = "goal ${step.goal} not built yet" }   // Phase 6
             }
@@ -297,6 +298,32 @@ class Executor(
         val top = root.t + (root.b - root.t) / 3
         return device.ocr().firstOrNull { it.t < top && it.text.trim() in setOf("X", "x", "×", "✕", "✖") }
             ?.let { UiNode(text = "×", cls = "OcrText", clickable = true, l = it.l, t = it.t, r = it.r, b = it.b) }
+    }
+
+    /** Open the highest result whose title holds most of the search words ("s25ultra phone cases" ~ "…Case for Galaxy S25 Ultra"). */
+    private suspend fun pickResult(query: String, step: Step, sl: StepLog) {
+        val want = Identity.stems(query).ifEmpty { throw Stop(Outcome.FAILED, "empty search") }
+        for (attempt in 0..MAX_SCROLLS) {
+            val (root, pkg) = device.screen() ?: throw Stop(Outcome.FAILED, "screen unreadable")
+            SafetyGate.check(root, pkg)?.let { device.actor.handOff(it); throw Stop(Outcome.HANDED_OFF, it.reason) }
+            checkLang(root, step)
+            val best = root.walk().filter { it.visible && it.clickable && !it.editable }.mapNotNull { n ->
+                val title = (n.label ?: Identity.primaryText(n))?.takeIf { it.length >= 12 } ?: return@mapNotNull null
+                val flat = Identity.loose(title)
+                // The search bar echoes the query; a result never equals it exactly.
+                if (flat == Identity.loose(query) || n.id?.contains("search", ignoreCase = true) == true) return@mapNotNull null
+                val score = want.count { w -> Identity.loose(w).let { it.isNotEmpty() && flat.contains(it) } }.toDouble() / want.size
+                Triple(n, title, score).takeIf { score >= 0.5 }
+            }.sortedWith(compareBy({ -it.third }, { it.first.t })).firstOrNull()
+            if (best != null) {
+                sl.level = 1; sl.note = "opened \"${best.second.take(50)}\" (${(best.third * 100).toInt()}% of the search words)"
+                if (device.actor.tap(best.first, root, pkg) is GatedActor.Result.Blocked) throw Stop(Outcome.HANDED_OFF, "blocked opening a result")
+                device.screen(); sl.status = "ok"; return
+            }
+            val list = root.walk().filter { it.visible && it.scrollable }.maxByOrNull { (it.r - it.l) * (it.b - it.t) } ?: break
+            device.scroll(list, forward = true)
+        }
+        throw Stop(Outcome.STUCK, "no result matches \"$query\"")
     }
 
     /** Habit defaults: make the sheet show the same options as the demo (required groups block "Add item" otherwise). */

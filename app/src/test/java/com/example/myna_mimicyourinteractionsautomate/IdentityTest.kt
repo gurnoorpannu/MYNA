@@ -314,3 +314,31 @@ class CloseIconTest {
         assertEquals(null, com.example.myna_mimicyourinteractionsautomate.replay.Finder.closeButton(page))
     }
 }
+
+
+/** Amazon web pages send no tap events: infer the tap from what's new on the next page. */
+class DiffInferenceTest {
+    private fun link(t: String, top: Int) = UiNode(text = t, clickable = true, t = top, b = top + 80)
+    private val results = UiNode(children = listOf(
+        link("Sponsored Ad - Spigen Liquid Air Case for Samsung Galaxy S25 Ultra", 300),
+        link("Go to detail page for \"TheGiftKart Hybrid Matte Back Cover for Galaxy S25 Ultra\"", 700),
+        link("Go to detail page for \"Ringke Fusion Clear Case for Galaxy S25 Ultra\"", 1100)))
+    private val product = UiNode(children = listOf(
+        UiNode(text = "TheGiftKart Hybrid Matte Back Cover for Galaxy S25 Ultra", t = 200, b = 300),
+        UiNode(text = "₹399", t = 400, b = 450), link("Add to cart", 1500), link("Buy Now", 1600)))
+    private val added = UiNode(children = listOf(
+        UiNode(text = "TheGiftKart Hybrid Matte Back Cover for Galaxy S25 Ultra", t = 200, b = 300),
+        UiNode(text = "Added to Cart", t = 1500, b = 1560), link("Go to Cart", 1600)))
+
+    @Test fun productOpenedFromResults() {
+        assertTrue(Identity.inferByDiff(results, product)!!.label!!.contains("TheGiftKart"))
+    }
+
+    @Test fun addToCartFromConfirmation() {
+        assertEquals("Add to cart", Identity.inferByDiff(product, added)?.label)
+    }
+
+    @Test fun nothingNewNothingGuessed() {
+        assertEquals(null, Identity.inferByDiff(product, product))
+    }
+}

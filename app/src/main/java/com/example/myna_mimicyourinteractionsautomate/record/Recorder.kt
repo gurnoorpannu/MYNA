@@ -65,8 +65,11 @@ class Recorder(
     /** The user pressed Enter/search on the keyboard after typing (no event for that — inferred from the next screen). */
     fun markSubmit() {
         val i = steps.lastIndex
-        if (i >= 0 && steps[i].type == StepType.TYPE) steps[i] = steps[i].copy(submit = true)
+        if (i >= 0 && steps[i].type == StepType.TYPE && !steps[i].submit) { steps[i] = steps[i].copy(submit = true); resultsPending = true }
     }
+
+    /** After Enter, the next page change is the results arriving — not a tap. */
+    var resultsPending = false
 
     /** The query typed just before, if the last step was typing — used to name a picked search result. */
     val lastTyped: String? get() = steps.lastOrNull()?.takeIf { it.type == StepType.TYPE || it.goal == "search" }?.text
@@ -126,7 +129,7 @@ fun Step.describe(): String {
         StepType.TYPE -> "type \"$text\" into ${target?.label ?: target?.id ?: "field"}" + if (submit) " + Enter" else ""
         StepType.TAP -> "tap " + (target?.label ?: target?.key?.value ?: "?") +
             (target?.key?.takeIf { it.value != target.label }?.let { " (${it.by.name.lowercase()}: ${it.value})" } ?: "")
-        StepType.GOAL -> if (goal == "confirm_sheet") "confirm the options sheet" + (args["choices"]?.let { " ($it)" } ?: "") else if (goal == "search") "search \"$text\"" + (args["pick"]?.let { " and open \"$it\"" } ?: "") else "$goal $args"
+        StepType.GOAL -> if (goal == "pick_result") "open the result matching \"${args["query"]}\"" else if (goal == "confirm_sheet") "confirm the options sheet" + (args["choices"]?.let { " ($it)" } ?: "") else if (goal == "search") "search \"$text\"" + (args["pick"]?.let { " and open \"$it\"" } ?: "") else "$goal $args"
     }
     return if (noise) "(mistake?) $what" else what
 }

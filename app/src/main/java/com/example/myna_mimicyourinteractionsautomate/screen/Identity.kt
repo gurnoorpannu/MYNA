@@ -173,6 +173,32 @@ object Identity {
         }.maxByOrNull { it.r - it.l }
     }
 
+    /** Word stems for fuzzy word overlap: "Added"→"add", "carts"→"cart", "S25 Ultra"→"s25","ultra". */
+    fun stems(s: String): Set<String> = s.lowercase().split(Regex("[^\\p{L}\\p{N}]+"))
+        .filter { it.length >= 2 && it !in STEM_STOP }
+        .map { w -> w.removeSuffix("ing").removeSuffix("ed").removeSuffix("es").removeSuffix("s").ifEmpty { w } }.toSet()
+
+    private val STEM_STOP = setOf("to", "the", "a", "an", "for", "of", "and", "in", "on", "with", "go", "page", "detail", "your", "my")
+
+    /**
+     * Web pages (Amazon) report no event for a tap. Compare before/after: the tapped element is the one on [prev]
+     * whose words show up in text that is NEW on [next] — a product title that became the page heading,
+     * "Add to cart" → "Added to cart". Null unless one candidate clearly wins.
+     */
+    fun inferByDiff(prev: UiNode, next: UiNode): UiNode? {
+        val before = prev.walk().filter { it.visible }.mapNotNull { it.label?.let(::norm) }.toSet()
+        val fresh = next.walk().filter { it.visible && !it.editable }.mapNotNull { it.label?.let(::norm) }.filter { it !in before }.map(::stems).toList()
+        if (fresh.isEmpty()) return null
+        val scored = prev.walk().filter { it.visible && it.clickable && !it.editable }.mapNotNull { n ->
+            val words = stems(n.label ?: primaryText(n) ?: return@mapNotNull null)
+            if (words.size < 2) return@mapNotNull null
+            val best = fresh.maxOf { f -> words.count { it in f } }
+            (n to best).takeIf { best >= 2 && best * 2 >= words.size }
+        }.sortedByDescending { it.second }.toList()
+        val top = scored.firstOrNull() ?: return null
+        return top.first.takeIf { scored.getOrNull(1)?.second != top.second }
+    }
+
     /** A clickable, non-editable element that says "search" (label, id or description). */
     fun searchBar(root: UiNode): UiNode? = root.walk().firstOrNull { n ->
         n.visible && n.clickable && !n.editable &&

@@ -28,6 +28,7 @@ import com.example.myna_mimicyourinteractionsautomate.recipe.Target
 import com.example.myna_mimicyourinteractionsautomate.recipe.UniqueKey
 import com.example.myna_mimicyourinteractionsautomate.recipe.Screen
 import com.example.myna_mimicyourinteractionsautomate.recipe.SystemKey
+import com.example.myna_mimicyourinteractionsautomate.recipe.StepType
 import com.example.myna_mimicyourinteractionsautomate.record.Recorder
 import com.example.myna_mimicyourinteractionsautomate.safety.GatedActor
 import com.example.myna_mimicyourinteractionsautomate.safety.SafetyGate
@@ -272,6 +273,11 @@ class MynaService : AccessibilityService(), Device {
             } else {
                 Identity.inferTap(prev.first, root)?.let { rec.onInferredTap(Identity.target(it, prev.first, rec.spoken), prev.second) }
             }
+        } else if (prev != null && rec.steps.size == stepsAtPrevSettle && screen.pkg == prev.second.pkg &&
+            rec.steps.lastOrNull()?.let { it.type == StepType.TYPE && !it.submit } != true) {   // not while typing
+            // Same activity, new content, no event (taps inside web pages): infer from what's new on screen.
+            if (rec.resultsPending) rec.resultsPending = false
+            else Identity.inferByDiff(prev.first, root)?.let { rec.onInferredTap(Identity.target(it, prev.first, rec.spoken), prev.second) }
         }
         prevSettled = root to screen
         stepsAtPrevSettle = rec.steps.size
