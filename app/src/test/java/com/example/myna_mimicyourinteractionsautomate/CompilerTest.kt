@@ -66,4 +66,14 @@ class CompilerTest {
         assertEquals(listOf("Farmhouse Pizza"), z.cart)
         Llm.canned.clear()
     }
+
+    @Test fun typedTextWithTwoSpokenPartsKeepsBoth() {
+        val amazon = Recording("add a phone case for my s25-ultra to my amazon shopping cart", "in.amazon.mShop.android.shopping", 2L,
+            steps = listOf(Step(StepType.LAUNCH, pkg = "in.amazon.mShop.android.shopping"),
+                Step(StepType.TYPE, text = "s25ultra phone cases", screen = en, target = Target(id = "rs_search_src_text"))))
+        val blanks = Compiler.findBlanks(amazon)
+        assertEquals(setOf("phone case", "s25-ultra"), blanks.map { it.value }.toSet())
+        blanks.forEach { it.name = if (it.value == "phone case") "product" else "device" }
+        assertEquals("{device} {product}s", Compiler.applyBlanks(amazon.steps, blanks)[1].text)
+    }
 }

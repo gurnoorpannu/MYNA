@@ -68,11 +68,22 @@ object Compiler {
             value ?: return
             match(value, w, appWords)?.let { (a, b) -> hits += Hit(step, where, value, a, b) }
         }
+        /** Typed text can hold several spoken parts ("s25ultra phone cases" = "s25-ultra" + "phone case"): take each. */
+        fun hitAll(step: Int, where: Where, value: String?) {
+            value ?: return
+            var rest: String = value
+            while (true) {
+                val (a, b) = match(rest, w, appWords) ?: break
+                if (hits.any { it.step == step && it.where == where && it.from <= b && a <= it.to }) break
+                hits += Hit(step, where, value, a, b)
+                rest = removeLoose(rest, w.subList(a, b + 1).joinToString(" ")) ?: break
+            }
+        }
         rec.steps.forEachIndexed { i, s ->
             if (s.noise) return@forEachIndexed
             when (s.type) {
-                StepType.TYPE -> hit(i, Where.TYPED, s.text)
-                StepType.GOAL -> if (s.goal == "search") { hit(i, Where.QUERY, s.text); hit(i, Where.PICK, s.args["pick"]) }
+                StepType.TYPE -> hitAll(i, Where.TYPED, s.text)
+                StepType.GOAL -> if (s.goal == "search") { hitAll(i, Where.QUERY, s.text); hit(i, Where.PICK, s.args["pick"]) }
                 StepType.TAP -> {
                     val t = s.target ?: return@forEachIndexed
                     val label = t.label ?: t.key?.takeIf { it.by in setOf(KeyKind.LABEL, KeyKind.CHILD_TEXT, KeyKind.OCR) }?.value
@@ -104,13 +115,24 @@ object Compiler {
         return generateSequence(1) { it + 1 }.map { if (it == 1) base else "$base$it" }.first { it !in taken }
     }
 
+    /** Regex matching [spoken] inside typed text, ignoring case, spaces and punctuation ("s25-ultra" ~ "S25 Ultra" ~ "s25ultra"). */
+    private fun looseRegex(spoken: String): Regex? = loose(spoken).takeIf { it.isNotEmpty() }
+        ?.map { Regex.escape(it.toString()) }?.joinToString("[^\\p{L}\\p{N}]*")?.let { Regex(it, RegexOption.IGNORE_CASE) }
+
+    private fun removeLoose(text: String, spoken: String): String? =
+        looseRegex(spoken)?.find(text)?.let { text.removeRange(it.range).trim() }?.takeIf { it.length >= 3 }
+
+    /** "s25ultra phone cases" with product = "phone case" → "s25ultra {product}s"; whole text if the part isn't found. */
+    fun template(text: String, spoken: String, ref: String): String =
+        looseRegex(spoken)?.find(text)?.let { text.replaceRange(it.range, ref) } ?: ref
+
     /** Rewrite the steps to use "{name}" wherever the blank's value was used. */
     fun applyBlanks(steps: List<Step>, blanks: List<Blank>): List<Step> {
         val out = steps.toMutableList()
         for (b in blanks) for (h in b.hits) {
             val s = out[h.step]; val ref = "{${b.name}}"
             out[h.step] = when (h.where) {
-                Where.TYPED, Where.QUERY -> s.copy(text = ref)
+                Where.TYPED, Where.QUERY -> s.copy(text = template(s.text ?: "", b.value, ref))
                 Where.PICK -> s.copy(args = s.args + ("pick" to ref))
                 Where.ANCHOR -> s.copy(target = s.target!!.copy(key = UniqueKey(KeyKind.NEAR_TEXT, ref, loose = true)))
                 Where.LABEL -> s.copy(target = s.target!!.copy(label = ref, key = UniqueKey(KeyKind.LABEL, ref, loose = true)))
