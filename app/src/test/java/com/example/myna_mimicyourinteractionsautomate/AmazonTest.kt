@@ -108,4 +108,15 @@ class AmazonTest {
         assertTrue(b.cart.single(), b.cart.single().contains("Laptop Stand"))
         Llm.canned.clear()
     }
+
+    @Test fun missingResultTapIsRecoveredAtReplay() = runBlocking {
+        // 23 Sep teach: + Enter and Add to cart were recorded, the product tap was not.
+        Llm.mock = true; Llm.canned.clear()
+        val noPick = rec.copy(steps = rec.steps.filterIndexed { i, _ -> i != 2 })
+        val r = Compiler.compile(noPick).recipe
+        val a = FakeAmazon()
+        val log = Executor(a).run(r)
+        assertEquals(log.reason, Outcome.HANDED_OFF, log.outcome)
+        assertTrue(a.cart.single().contains("S25 Ultra"))
+    }
 }

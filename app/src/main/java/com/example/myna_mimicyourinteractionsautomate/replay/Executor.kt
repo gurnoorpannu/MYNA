@@ -67,11 +67,19 @@ class Executor(
                         // Opened a wrong result (an ad, a store page) and the next step's button isn't there:
                         // go back and open the next-best result instead of giving up.
                         val prev = steps.getOrNull(i - 1)
-                        if (s.outcome != Outcome.STUCK || prev?.goal != "pick_result" || retries >= 2) throw s
+                        val afterSearch = prev != null && ((prev.type == StepType.TYPE && prev.submit) || (prev.goal == "search" && prev.args["pick"] == null))
+                        if (s.outcome != Outcome.STUCK || retries >= 2 || !(prev?.goal == "pick_result" || afterSearch)) throw s
                         retries++
-                        sl.note = "wrong result (${s.reason}); trying the next one"
-                        device.key(SystemKey.BACK)
-                        pickResult(Slots.fill(prev.args["query"], slots).orEmpty(), prev, sl)
+                        if (prev!!.goal == "pick_result") {
+                            sl.note = "wrong result (${s.reason}); trying the next one"
+                            device.key(SystemKey.BACK)
+                            pickResult(Slots.fill(prev.args["query"], slots).orEmpty(), prev, sl)
+                        } else {
+                            // Still on the results page (opening a result wasn't recorded): open the best match, then retry.
+                            sl.note = "opening the best result for \"${Slots.fill(prev.text, slots)}\" first"
+                            if (retries > 1) device.key(SystemKey.BACK)
+                            pickResult(Slots.fill(prev.text, slots).orEmpty(), prev, sl)
+                        }
                     }
                 }
                 if (unsubmitted == pending) unsubmitted = null   // any other step consumes it
