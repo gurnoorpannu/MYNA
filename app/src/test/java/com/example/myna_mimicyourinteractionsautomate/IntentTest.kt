@@ -76,4 +76,9 @@ class IntentTest {
         val d = IntentMatcher.decide("add a laptop stand to my amazon cart", listOf(amazon), at(0.795f))
         assertTrue(d.toString(), d is Decision.AskSlot || d is Decision.Run)
     }
+
+    @Test fun emptyBlankTakesItsConnectorWithIt() {
+        assertEquals("add a laptop stand to my Amazon Shopping Cart",
+            com.example.myna_mimicyourinteractionsautomate.replay.Slots.fill("add a {product} for my {item} to my Amazon Shopping Cart", mapOf("product" to "laptop stand", "item" to "")))
+    }
 }

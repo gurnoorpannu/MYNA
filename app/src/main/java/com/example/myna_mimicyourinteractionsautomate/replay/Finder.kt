@@ -159,8 +159,14 @@ object Finder {
 object Slots {
     private val REF = Regex("\\{(\\w+)\\}")
 
-    fun fill(s: String?, values: Map<String, String>): String? =
-        s?.let { REF.replace(it) { m -> values[m.groupValues[1]] ?: m.value }.replace(Regex("\\s{2,}"), " ").trim() }
+    fun fill(s: String?, values: Map<String, String>): String? = s?.let { t ->
+        // A blank left out takes its little connector with it: "for my {item}" → "" (not "for my to my …").
+        val dropped = values.filterValues { it.isBlank() }.keys.fold(t) { acc, k ->
+            acc.replace(Regex("\\b(for|with|from|of|in)\\s+(my\\s+|the\\s+|a\\s+)?\\{$k\\}", RegexOption.IGNORE_CASE), "{$k}")
+        }
+        REF.replace(dropped) { m -> values[m.groupValues[1]] ?: m.value }
+            .replace(Regex("\\s{2,}"), " ").replace("\" ", "\"").replace(" \"", " \"").trim()
+    }
 
     fun bind(t: Target, values: Map<String, String>): Target = if (values.isEmpty()) t else t.copy(
         label = fill(t.label, values),
