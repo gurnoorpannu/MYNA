@@ -42,10 +42,14 @@ object Identity {
         val nearby = anchor.walk().filter { it !in n.walk() }.mapNotNull { it.label }.distinct()
             .filter { isStable(it) && onlyInAnchor(it) }
             .sortedByDescending { t -> spoken.any { w -> t.contains(w, ignoreCase = true) } }
+        val spokenAnchor = nearby.firstOrNull { t -> spoken.any { w -> t.contains(w, ignoreCase = true) } }
         return when {
             label != null && !n.editable && unique(label) -> UniqueKey(KeyKind.LABEL, norm(label))
+            // "Add" on the card the user named: keep that link even if the id happens to be unique right now.
+            spokenAnchor != null && listItem(n) != null -> UniqueKey(KeyKind.NEAR_TEXT, norm(spokenAnchor))
             n.id != null && isStableId(n.id) && visible.count { it.id == n.id } == 1 -> UniqueKey(KeyKind.ID, n.id)
-            else -> subTexts.firstOrNull { unique(it) && isStable(it) }?.let { UniqueKey(KeyKind.CHILD_TEXT, norm(it)) }
+            // Prefer "Continue" over "2 items added": counts change between runs.
+            else -> subTexts.filter { unique(it) && isStable(it) }.minByOrNull { it.count(Char::isDigit) }?.let { UniqueKey(KeyKind.CHILD_TEXT, norm(it)) }
                 // "Add" on the Margherita card: anchor on the card's unique text.
                 ?: nearby.firstOrNull()?.let { UniqueKey(KeyKind.NEAR_TEXT, norm(it)) }
                 ?: UniqueKey(KeyKind.POSITION, n.bounds.joinToString(","))

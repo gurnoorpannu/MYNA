@@ -142,6 +142,7 @@ class MynaService : AccessibilityService() {
     }
 
     private fun onClick(pkg: String, src: AccessibilityNodeInfo) {
+        Log.d(TAG, "click $pkg ${src.className} text=\"${src.text}\" id=${src.viewIdResourceName} recording=${recorder != null}")
         val rec = recorder ?: return
         if (pkg == launcherPkg) return
         val (root, node) = snapshotAround(src) ?: return
@@ -184,7 +185,10 @@ class MynaService : AccessibilityService() {
         // New activity but no step since the last settled screen → the app ate the click event.
         val prev = prevSettled
         if (prev != null && rec.steps.size == stepsAtPrevSettle && screen.title != prev.second.title) {
+            // After typing, the pick must match the query ("dominos" → "Domino's Pizza", not "Pizza Bite House").
+            val query = rec.lastTyped
             val tapped = Identity.inferTap(prev.first, root)
+                ?.takeIf { query == null || Identity.loose(Identity.primaryText(it).orEmpty()).contains(Identity.loose(query)) }
             if (tapped != null) {
                 rec.onInferredTap(Identity.target(tapped, prev.first, rec.spoken), prev.second)
             } else {

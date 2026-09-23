@@ -173,3 +173,22 @@ class PersistentChromeTest {
         assertEquals(null, Identity.inferTap(home, suggestions))
     }
 }
+
+class SearchedCardTest {
+    // After searching "margherita" only one card shows, so button_add is unique — anchor must still win.
+    @Test fun spokenCardBeatsMomentarilyUniqueId() {
+        val card = UiNode(cls = "FrameLayout", children = listOf(
+            UiNode(text = "Margherita Pizza", t = 10), UiNode(text = "₹109", t = 20),
+            UiNode(text = "", id = "button_add", clickable = true, t = 30)))
+        val root = UiNode(children = listOf(UiNode(cls = "RecyclerView", scrollable = true, children = listOf(card))))
+        val t = Identity.target(card.children[2], root, setOf("margherita", "pizza"))
+        assertEquals(KeyKind.NEAR_TEXT, t.key!!.by)
+        assertEquals("Margherita Pizza", t.key!!.value)
+    }
+
+    @Test fun continueBeatsItemCount() {
+        val btn = UiNode(id = "container", clickable = true, children = listOf(UiNode(text = "2 items added"), UiNode(text = "Continue")))
+        val t = Identity.target(btn, UiNode(children = listOf(btn, UiNode(id = "container"))))
+        assertEquals("Continue", t.key!!.value)
+    }
+}
