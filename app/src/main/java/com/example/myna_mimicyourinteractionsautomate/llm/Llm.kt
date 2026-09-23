@@ -66,7 +66,9 @@ object Llm {
     private fun generate(prompt: String): String {
         val body = JSONObject()
             .put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
-            .put("generationConfig", JSONObject().put("temperature", 0).put("responseMimeType", "application/json"))
+            .put("generationConfig", JSONObject().put("temperature", 0).put("responseMimeType", "application/json")
+                // No hidden "thinking" tokens: our calls are short JSON picks, latency matters more.
+                .put("thinkingConfig", JSONObject().put("thinkingBudget", 0)))
         val text = post("${BuildConfig.GEMINI_MODEL}:generateContent", body)
             .getJSONArray("candidates").getJSONObject(0)
             .getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
