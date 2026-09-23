@@ -27,6 +27,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -117,9 +118,15 @@ class MainActivity : ComponentActivity() {
         var input by remember { mutableStateOf("") }
         val listen = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
             res.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { heard ->
-                input = heard
+                input = ""
                 scope.launch { onUserSaid(heard) }
             }
+        }
+        val listenNow = { runCatching { listen.launch(speechIntent(if (pending != null) "Your answer" else "What should I do?")) } }
+        // When MYNA asks something, listen for the reply once it has finished speaking.
+        val asking = pending
+        LaunchedEffect(asking) {
+            if (asking != null) { kotlinx.coroutines.delay(2_500); if (pending === asking) listenNow() }
         }
         Text("Ask MYNA", style = MaterialTheme.typography.titleMedium)
         chat.takeLast(6).forEach { Text(it, style = MaterialTheme.typography.bodySmall,
@@ -127,10 +134,13 @@ class MainActivity : ComponentActivity() {
         if (thinking) Text("…thinking", style = MaterialTheme.typography.bodySmall)
         OutlinedTextField(input, { input = it }, Modifier.fillMaxWidth(),
             label = { Text(if (pending != null) "Your answer" else "Say or type a command") },
-            trailingIcon = { IconButton(onClick = { runCatching { listen.launch(speechIntent(if (pending != null) "Your answer" else "What should I do?")) } }) {
-                Text("🎤", style = MaterialTheme.typography.titleLarge) } })
+            trailingIcon = { IconButton(onClick = { listenNow() }) { Text("🎤", style = MaterialTheme.typography.titleLarge) } })
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(enabled = input.isNotBlank() && !thinking, onClick = { val t = input; scope.launch { onUserSaid(t) } }) { Text(if (pending != null) "Answer" else "Go") }
+            Button(enabled = input.isNotBlank() && !thinking, onClick = { val t = input; input = ""; scope.launch { onUserSaid(t) } }) { Text(if (pending != null) "Answer" else "Go") }
+            (pending as? IntentMatcher.Decision.AskSlot)?.let { q ->
+                Button(onClick = { scope.launch { onUserSaid("none") } }) { Text("None") }
+                q.recipe.slots[q.slot]?.value?.let { last -> Button(onClick = { scope.launch { onUserSaid("same") } }) { Text("Same ($last)") } }
+            }
             if (pending is IntentMatcher.Decision.DidYouMean || pending is IntentMatcher.Decision.Unknown ||
                 (pending as? IntentMatcher.Decision.Run)?.confirm != null) {
                 Button(onClick = { scope.launch { onUserSaid("yes") } }) { Text("Yes") }
