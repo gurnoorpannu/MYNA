@@ -40,6 +40,10 @@ class SafetyGateTest {
     @Test fun letsNormalShoppingScreensThrough() {
         assertNull(SafetyGate.check(zomatoMenu, "com.application.zomato"))
         assertNull(SafetyGate.check(amazonCart, "in.amazon.mShop.android.shopping"))          // one UPI offer ≠ payment screen
+        // 23 Sep: Amazon cart with items — UPI + card offers, and the "Wallet" bottom tab on every screen.
+        assertNull(SafetyGate.check(screen(text("Pay with UPI, get ₹50 back"), text("10% off with HDFC credit card"),
+            UiNode(desc = "Wallet Tab 3 of 6", clickable = true, children = listOf(UiNode(text = "Wallet", id = "bottom_tab_label"))),
+            button("Proceed to Buy (1 item)")), "in.amazon.mShop.android.shopping"))
         // 23 Sep false alarm: Amazon's cart shows card offers + Pay balance.
         assertNull(SafetyGate.check(screen(text("Shopping Cart"), text("10% off with HDFC credit card"), text("Amazon Pay Balance: ₹0"),
             button("Proceed to Buy (1 item)")), "in.amazon.mShop.android.shopping"))

@@ -37,6 +37,12 @@ object SafetyGate {
         "^(log ?in|sign ?in|login with otp|send otp|get otp|request otp|verify( otp)?|continue with (google|email|phone|mobile)( number)?)$",
         RegexOption.IGNORE_CASE)
 
+    private val CART_NEXT = Regex("^(proceed to buy|proceed to checkout|checkout)\\b", RegexOption.IGNORE_CASE)
+    private val TAB = Regex("\\btab \\d+ of \\d+\\b", RegexOption.IGNORE_CASE)
+
+    private fun isTab(n: UiNode) = n.cls?.endsWith("Tab") == true || n.id?.contains("tab", ignoreCase = true) == true ||
+        n.label?.let(TAB::containsMatchIn) == true
+
     /** Payment-method categories; ≥3 visible (or 2 + radio buttons) = a payment screen. */
     private val PAY_METHODS = listOf(
         "upi" to Regex("\\bupi\\b", RegexOption.IGNORE_CASE),
@@ -59,12 +65,15 @@ object SafetyGate {
         visible.firstOrNull { it.clickable && COMMIT.containsMatchIn(allText(it)) }
             ?.let { return Block(Kind.FINAL_ORDER, "\"${COMMIT.find(allText(it))!!.value}\" button on screen") }
 
-        val texts = visible.mapNotNull { it.label }
+        // Navigation tabs ("Wallet Tab 3 of 6" on every Amazon screen) are not payment options.
+        val texts = visible.filter { n -> (sequenceOf(n) + n.ancestors().take(2)).none(::isTab) }.mapNotNull { it.label }
         val methods = PAY_METHODS.filter { (_, re) -> texts.any { re.containsMatchIn(it) } }.map { it.first }
+        // A cart ("Proceed to Buy") advertises card/UPI offers but still has a step before payment.
+        val isCart = visible.any { it.clickable && it.walk().any { c -> c.label?.let(CART_NEXT::containsMatchIn) == true } }
         // Carts advertise "credit card offers" + "Pay balance" (2 kinds): not a payment screen. Real ones list
         // ≥3 kinds (Zomato: UPI, card, wallet; Amazon: +netbanking, COD, EMI), or 2 with radio buttons to pick one.
         val radios = visible.any { it.cls?.contains("Radio") == true }
-        if (methods.size >= 3 || (methods.size >= 2 && radios)) return Block(Kind.PAYMENT, "payment options on screen (${methods.joinToString()})")
+        if (!isCart && (methods.size >= 3 || (methods.size >= 2 && radios))) return Block(Kind.PAYMENT, "payment options on screen (${methods.joinToString()})")
 
         if (visible.any { it.editable } && visible.any { it.clickable && it.label?.let(LOGIN_BUTTON::matches) == true })
             return Block(Kind.LOGIN, "login screen")
