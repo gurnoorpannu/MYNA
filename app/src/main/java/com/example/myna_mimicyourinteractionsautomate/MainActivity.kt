@@ -36,6 +36,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.IconButton
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.activity.compose.BackHandler
+import androidx.compose.ui.draw.scale
+import androidx.compose.animation.core.animateFloat
 import com.example.myna_mimicyourinteractionsautomate.ui.MynaIcons
 import com.example.myna_mimicyourinteractionsautomate.ui.VoiceInput
 import com.example.myna_mimicyourinteractionsautomate.intent.SpeechFix
@@ -113,6 +117,7 @@ class MainActivity : ComponentActivity() {
     private var openRun by mutableStateOf<RunLog?>(null)
     private var settingsOpen by mutableStateOf(false)
     private var customizing by mutableStateOf<Recipe?>(null)
+    private var chatOpen by mutableStateOf(false)
 
     // Ask MYNA (Phase 5) conversation state
     private val chat = mutableStateListOf<String>()
@@ -187,6 +192,12 @@ class MainActivity : ComponentActivity() {
         openRecipe?.let { RecipeSheet(it) }
         openRun?.let { RunSheet(it) }
         if (settingsOpen) SettingsSheet()
+        // The conversation slides up over everything, and back down on Back.
+        androidx.compose.animation.AnimatedVisibility(chatOpen,
+            enter = androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(320)) { it } + androidx.compose.animation.fadeIn(),
+            exit = androidx.compose.animation.slideOutVertically(androidx.compose.animation.core.tween(260)) { it } + androidx.compose.animation.fadeOut()) {
+            ChatScreen()
+        }
         customizing?.let { CustomizeSheet(it) }
     }
 
@@ -241,53 +252,108 @@ class MainActivity : ComponentActivity() {
     private fun title(r: Recipe) = Slots.fill(r.summary ?: r.utterance, r.slots.mapValues { it.value.value ?: it.value.default.orEmpty() })!!
         .replaceFirstChar { it.uppercase() }
 
-    /** Ask MYNA: tap the mic (or type); MYNA picks the recipe, fills blanks, asks when unsure (T3, T12, T13). */
+    /** Home: the mic circle and a type box. Both open the chat screen, where the conversation happens. */
     @Composable
     private fun AskMyna() {
         val scope = rememberCoroutineScope()
         var input by remember { mutableStateOf("") }
-        val listenNow = {
-            if (listening) { voice.stop(); listening = false }   // tap again to stop
-            else listen { heard ->
-                input = ""
-                // Fix mis-hearings against known words ("marherator" → "Margherita"), and say so.
-                val fixed = SpeechFix.fix(heard, SpeechFix.vocabulary(recipes))
-                scope.launch { onUserSaid(fixed.text, fixed.changes) }
-            }
-        }
-        // When MYNA asks something, listen for the reply once it has finished speaking.
-        val asking = pending
-        LaunchedEffect(asking) { if (asking != null) { kotlinx.coroutines.delay(2_500); if (pending === asking) listenNow() } }
-
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            MicHero(busy = thinking || pending != null, listening = listening,
-                caption = when { listening -> liveWords.ifBlank { "Listening…" }; thinking -> "Thinking…"; pending != null -> "Tap to answer"
-                    else -> "What do you want to do with MYNA today?" },
-                onTap = { listenNow() })
-        }
-        chat.takeLast(4).forEach { Bubble(it.substringAfter(": "), mine = it.startsWith("You")) }
-        // Quick answers for MYNA's questions (they wrap instead of squeezing).
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            (pending as? IntentMatcher.Decision.AskSlot)?.let { q ->
-                if (q.skippable) Chip("None") { scope.launch { onUserSaid("none") } }
-                q.recipe.slots[q.slot]?.value?.let { last -> Chip("Same ($last)") { scope.launch { onUserSaid("same") } } }
-            }
-            if (pending is IntentMatcher.Decision.DidYouMean || pending is IntentMatcher.Decision.Unknown ||
-                (pending as? IntentMatcher.Decision.Run)?.confirm != null) {
-                Chip("Yes") { scope.launch { onUserSaid("yes") } }
-                Chip("No") { scope.launch { onUserSaid("no") } }
-            }
+            MicHero(busy = false, listening = false, caption = "What do you want to do with MYNA today?",
+                onTap = { chatOpen = true; startListening(scope) })
         }
         OutlinedTextField(input, { input = it }, Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(16.dp),
-            placeholder = { Text(if (pending != null) "Or type your answer" else "Or type a command") },
+            placeholder = { Text("Or type a command") },
             trailingIcon = {
-                TextButton({ val t = input; input = ""; scope.launch { onUserSaid(t) } }, enabled = input.isNotBlank() && !thinking) { Text("Send") }
+                TextButton({ val t = input; input = ""; chatOpen = true; scope.launch { onUserSaid(t) } }, enabled = input.isNotBlank()) { Text("Send") }
             })
+    }
+
+    /** Listen, fix mis-hearings against known words ("marherator" → "Margherita"), then take it as the user's turn. */
+    private fun startListening(scope: kotlinx.coroutines.CoroutineScope) {
+        if (listening) { voice.stop(); listening = false; return }   // tap again to stop
+        listen { heard ->
+            val fixed = SpeechFix.fix(heard, SpeechFix.vocabulary(recipes))
+            scope.launch { onUserSaid(fixed.text, fixed.changes) }
+        }
+    }
+
+    /** Full-screen conversation with MYNA; slides up over everything. */
+    @Composable
+    private fun ChatScreen() {
+        val scope = rememberCoroutineScope()
+        var input by remember { mutableStateOf("") }
+        val list = androidx.compose.foundation.lazy.rememberLazyListState()
+        BackHandler { voice.stop(); listening = false; chatOpen = false }
+        // Keep the newest message in view.
+        LaunchedEffect(chat.size, thinking) { if (chat.isNotEmpty()) list.animateScrollToItem(chat.size - 1 + if (thinking) 1 else 0) }
+        // When MYNA asks something, listen for the reply once it has finished speaking.
+        val asking = pending
+        LaunchedEffect(asking) { if (asking != null) { kotlinx.coroutines.delay(2_500); if (pending === asking && !listening) startListening(scope) } }
+
+        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).systemBarsPadding()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton({ voice.stop(); listening = false; chatOpen = false }) { Icon(MynaIcons.Back, "Back", tint = Ink) }
+                Text("MYNA", fontWeight = FontWeight.Black, fontSize = 20.sp, letterSpacing = 2.sp)
+            }
+            androidx.compose.foundation.lazy.LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp), state = list,
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (chat.isEmpty()) item { Text("Say or type what you'd like done — like “order a margherita from Domino's”.",
+                    color = InkSoft, modifier = Modifier.padding(top = 24.dp)) }
+                items(chat.size, key = { it }) { i ->
+                    val line = chat[i]
+                    // Each new message slides and fades in.
+                    var shown by remember { mutableStateOf(false) }
+                    LaunchedEffect(Unit) { shown = true }
+                    androidx.compose.animation.AnimatedVisibility(shown,
+                        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically { it / 2 }) {
+                        Bubble(line.substringAfter(": "), mine = line.startsWith("You"))
+                    }
+                }
+                if (thinking) item { Bubble("…", mine = false) }
+            }
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally) {
+                // Quick answers for MYNA's questions (they wrap instead of squeezing).
+                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    (pending as? IntentMatcher.Decision.AskSlot)?.let { q ->
+                        if (q.skippable) Chip("None") { scope.launch { onUserSaid("none") } }
+                        q.recipe.slots[q.slot]?.value?.let { last -> Chip("Same ($last)") { scope.launch { onUserSaid("same") } } }
+                    }
+                    if (pending is IntentMatcher.Decision.DidYouMean || pending is IntentMatcher.Decision.Unknown ||
+                        (pending as? IntentMatcher.Decision.Run)?.confirm != null) {
+                        Chip("Yes") { scope.launch { onUserSaid("yes") } }
+                        Chip("No") { scope.launch { onUserSaid("no") } }
+                    }
+                }
+                if (listening) Text(liveWords.ifBlank { "Listening…" }, color = com.example.myna_mimicyourinteractionsautomate.ui.theme.Ok,
+                    fontWeight = FontWeight.SemiBold)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(input, { input = it }, Modifier.weight(1f), singleLine = true, shape = RoundedCornerShape(24.dp),
+                        placeholder = { Text(if (pending != null) "Type your answer" else "Type a command") },
+                        trailingIcon = {
+                            TextButton({ val t = input; input = ""; scope.launch { onUserSaid(t) } }, enabled = input.isNotBlank() && !thinking) { Text("Send") }
+                        })
+                    MicButton(listening) { startListening(scope) }
+                }
+            }
+        }
+    }
+
+    /** The chat's mic: black, green while listening, with a soft pulse. */
+    @Composable
+    private fun MicButton(listening: Boolean, onTap: () -> Unit) {
+        val colour by androidx.compose.animation.animateColorAsState(if (listening) com.example.myna_mimicyourinteractionsautomate.ui.theme.Ok else Ink, label = "mic")
+        val pulse by androidx.compose.animation.core.rememberInfiniteTransition(label = "p").animateFloat(1f, if (listening) 1.12f else 1f,
+            androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(600),
+                androidx.compose.animation.core.RepeatMode.Reverse), label = "s")
+        Box(Modifier.size(58.dp).scale(pulse).clip(CircleShape).background(colour).clickable(onClick = onTap), contentAlignment = Alignment.Center) {
+            Icon(painterResource(R.drawable.mic), "Speak", Modifier.size(28.dp), tint = androidx.compose.ui.graphics.Color.White)
+        }
     }
 
     @Composable
     private fun Chip(label: String, onClick: () -> Unit) {
-        Text(label, Modifier.clip(RoundedCornerShape(20.dp)).background(BeakSoft).border(1.dp, Beak, RoundedCornerShape(20.dp))
+        Text(label, Modifier.clip(RoundedCornerShape(20.dp)).background(androidx.compose.ui.graphics.Color.White).border(1.dp, Ink, RoundedCornerShape(20.dp))
             .clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 9.dp), fontWeight = FontWeight.SemiBold)
     }
 
