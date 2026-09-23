@@ -136,7 +136,7 @@ class Executor(
             if (step.type == StepType.TYPE && !openedSearch) {
                 // Universal search: the field often lives behind a search bar that must be tapped first.
                 openedSearch = true
-                searchBar(root)?.let { device.actor.tap(it, root, pkg); continue }
+                Identity.searchBar(root)?.let { device.actor.tap(it, root, pkg); continue }
             }
             val list = root.walk().filter { it.visible && it.scrollable }.maxByOrNull { (it.r - it.l) * (it.b - it.t) }
             if (scrolls < MAX_SCROLLS && list != null) {
@@ -176,11 +176,6 @@ class Executor(
             ?: lines.filter { Identity.loose(it.text).contains(want) }.minByOrNull { it.t }
             ?: return null
         return UiNode(text = line.text, cls = "OcrText", clickable = true, l = line.l, t = line.t, r = line.r, b = line.b)
-    }
-
-    private fun searchBar(root: UiNode): UiNode? = root.walk().firstOrNull { n ->
-        n.visible && n.clickable && !n.editable &&
-            listOfNotNull(n.label, n.id, n.desc).any { Regex("search", RegexOption.IGNORE_CASE).containsMatchIn(it) }
     }
 
     private fun describe(t: com.example.myna_mimicyourinteractionsautomate.recipe.Target) =

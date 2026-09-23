@@ -52,6 +52,9 @@ object Identity {
             else -> subTexts.filter { unique(it) && isStable(it) }.minByOrNull { it.count(Char::isDigit) }?.let { UniqueKey(KeyKind.CHILD_TEXT, norm(it)) }
                 // "Add" on the Margherita card: anchor on the card's unique text.
                 ?: nearby.firstOrNull()?.let { UniqueKey(KeyKind.NEAR_TEXT, norm(it)) }
+                // Title repeated on screen (result row shows its name twice): still better than raw position;
+                // the finder breaks ties by nearest demo position.
+                ?: primaryText(n)?.let { UniqueKey(KeyKind.CHILD_TEXT, norm(it)) }
                 ?: UniqueKey(KeyKind.POSITION, n.bounds.joinToString(","))
         }
     }
@@ -111,7 +114,11 @@ object Identity {
      * When the screen changes with no recorded step, guess the tap: the one clickable on [prev]
      * whose text shows up on [next]. Null unless exactly one candidate — a wrong guess is worse than none.
      */
-    fun inferTap(prev: UiNode, next: UiNode): UiNode? {
+    fun inferTap(prev: UiNode, next: UiNode, query: String? = null): UiNode? {
+        // Landed on a screen with a text field → the user tapped the search bar (Zomato home sends no click).
+        if (next.walk().any { it.visible && it.editable }) searchBar(prev)?.let { return it }
+        // Guessing a list row is only safe right after typing, and the row must match what was typed.
+        if (query == null) return null
         val nextTexts = next.walk().filter { it.visible }.mapNotNull { it.label?.let(::norm) }.toSet()
         // Same text at the same place on both screens = persistent chrome (Zomato's cart bar), not what was tapped.
         val persistent = next.walk().filter { it.visible && it.label != null }.map { norm(it.label!!) to it.bounds }.toSet()
@@ -124,8 +131,16 @@ object Identity {
             .toList()
         // A text repeated across many rows ("Restaurant") proves nothing; keep ones specific to one row.
         val specific = hits.filter { (_, t) -> prev.walk().count { it.visible && it.label?.let(::norm) == t } <= 2 }
-        val best = specific.distinctBy { it.second }.maxByOrNull { it.second.length } ?: return null
-        return best.first.takeIf { specific.count { it.second == best.second } == 1 && prevTexts.isNotEmpty() }
+        val q = loose(query)
+        val matching = specific.filter { loose(it.second).contains(q) }
+        val best = matching.distinctBy { it.second }.maxByOrNull { it.second.length } ?: return null
+        return best.first.takeIf { matching.count { it.second == best.second } == 1 && prevTexts.isNotEmpty() }
+    }
+
+    /** A clickable, non-editable element that says "search" (label, id or description). */
+    fun searchBar(root: UiNode): UiNode? = root.walk().firstOrNull { n ->
+        n.visible && n.clickable && !n.editable &&
+            listOfNotNull(n.label, n.id, n.desc).any { Regex("search", RegexOption.IGNORE_CASE).containsMatchIn(it) }
     }
 
     /**

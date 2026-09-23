@@ -229,8 +229,7 @@ class MynaService : AccessibilityService(), Device {
         if (prev != null && rec.steps.size == stepsAtPrevSettle && screen.title != prev.second.title) {
             // After typing, the pick must match the query ("dominos" → "Domino's Pizza", not "Pizza Bite House").
             val query = rec.lastTyped
-            val tapped = Identity.inferTap(prev.first, root)
-                ?.takeIf { query == null || Identity.loose(Identity.primaryText(it).orEmpty()).contains(Identity.loose(query)) }
+            val tapped = Identity.inferTap(prev.first, root, query)
             if (tapped != null) {
                 rec.onInferredTap(Identity.target(tapped, prev.first, rec.spoken), prev.second)
             } else {

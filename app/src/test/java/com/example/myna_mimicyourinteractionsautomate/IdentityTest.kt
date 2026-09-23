@@ -129,12 +129,12 @@ class InferTapTest {
         UiNode(text = "Domino's Pizza", cls = "TextView", t = 200, b = 260), UiNode(text = "Margherita Pizza", cls = "TextView", t = 900, b = 960)))
 
     @Test fun picksTheRowWhoseTitleIsOnTheNextScreen() {
-        val tapped = Identity.inferTap(suggestions, menu)
+        val tapped = Identity.inferTap(suggestions, menu, "dominos")
         assertEquals("Domino's Pizza", tapped?.let(Identity::primaryText))
     }
 
     @Test fun noGuessWhenNothingMatches() {
-        assertEquals(null, Identity.inferTap(suggestions, UiNode(children = listOf(UiNode(text = "Back", clickable = true)))))
+        assertEquals(null, Identity.inferTap(suggestions, UiNode(children = listOf(UiNode(text = "Back", clickable = true))), "dominos"))
     }
 }
 
@@ -170,7 +170,8 @@ class PersistentChromeTest {
             UiNode(cls = "ViewGroup", clickable = true, children = listOf(UiNode(text = "Domino's Pizza", t = 2000, b = 2050), UiNode(text = "View Menu", t = 2060, b = 2100)))))
         val home = UiNode(children = listOf(cartBar(), UiNode(text = "Search", clickable = true)))
         val suggestions = UiNode(children = listOf(cartBar(), UiNode(text = "Type to search", editable = true)))
-        assertEquals(null, Identity.inferTap(home, suggestions))
+        assertEquals("Search", Identity.inferTap(home, suggestions)?.label)          // the search bar, not the cart bar
+        assertEquals(null, Identity.inferTap(home, UiNode(children = listOf(cartBar())), "dominos"))
     }
 }
 
@@ -221,5 +222,27 @@ class WholePageScrollTest {
     @Test fun clearTextCrossIsNotAPopupClose() {
         val bar = UiNode(children = listOf(UiNode(desc = "Double tap to clear text", id = "iconCross", clickable = true)))
         assertEquals(null, com.example.myna_mimicyourinteractionsautomate.replay.Finder.closeButton(bar))
+    }
+}
+
+
+class HomeToSearchTest {
+    // 23 Sep bug: home → search had no click event and the recorder guessed the "North Indian" chip.
+    private val home = UiNode(cls = "FrameLayout", b = 2400, children = listOf(
+        UiNode(id = "search_edit_text", desc = "Double tap to open search page", clickable = true, t = 300, b = 400),
+        UiNode(cls = "RecyclerView", scrollable = true, t = 500, b = 700, children = listOf(
+            UiNode(clickable = true, t = 500, b = 600, children = listOf(UiNode(text = "North Indian", t = 510, b = 560))),
+            UiNode(clickable = true, t = 600, b = 700, children = listOf(UiNode(text = "Pizza", t = 610, b = 660)))))))
+    private val search = UiNode(cls = "FrameLayout", b = 2400, children = listOf(
+        UiNode(id = "edittext", editable = true, t = 100, b = 200),
+        UiNode(text = "WHAT'S ON YOUR MIND?", t = 900, b = 950), UiNode(text = "North Indian", t = 1000, b = 1050)))
+
+    @Test fun textFieldOnNextScreenMeansSearchBarWasTapped() {
+        assertEquals("search_edit_text", Identity.inferTap(home, search)?.id)
+    }
+
+    @Test fun noRowGuessWithoutTyping() {
+        val noField = UiNode(children = listOf(UiNode(text = "North Indian", t = 1000, b = 1050)))
+        assertEquals(null, Identity.inferTap(home, noField))
     }
 }
