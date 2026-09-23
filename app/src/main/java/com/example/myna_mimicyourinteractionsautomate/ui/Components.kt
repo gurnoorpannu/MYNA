@@ -57,14 +57,15 @@ fun MicHero(busy: Boolean, caption: String, onTap: () -> Unit) {
         animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "pulse")
     Box(
         Modifier.size(248.dp).scale(pulse).clip(CircleShape)
-            .background(Brush.radialGradient(listOf(BeakSoft, Color.White)))
-            .border(2.dp, Beak, CircleShape)
+            .background(Brush.radialGradient(listOf(Card, Color.White)))
+            .border(2.dp, Ink, CircleShape)
             .clickable(onClick = onTap),
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.size(84.dp).clip(CircleShape).background(Ink), contentAlignment = Alignment.Center) {
-                androidx.compose.material3.Icon(MynaIcons.Mic, "Speak", Modifier.size(40.dp), tint = Color.White)
+                androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(com.example.myna_mimicyourinteractionsautomate.R.drawable.mic),
+                    "Speak", Modifier.size(40.dp), tint = Color.White)
             }
             Spacer(Modifier.height(14.dp))
             Text(caption, textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, lineHeight = 22.sp,

@@ -33,6 +33,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.IconButton
 import androidx.compose.foundation.layout.FlowRow
 import com.example.myna_mimicyourinteractionsautomate.ui.MynaIcons
@@ -93,8 +94,8 @@ import java.io.File
 
 class MainActivity : ComponentActivity() {
 
-    private enum class Tab(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
-        HOME("Home", MynaIcons.Home), TEACH("Teach", MynaIcons.Teach), HISTORY("History", MynaIcons.History)
+    private enum class Tab(val label: String, val icon: Int) {
+        HOME("Home", R.drawable.home), TEACH("Teach", R.drawable.teaching), HISTORY("History", R.drawable.history)
     }
 
     private var tab by mutableStateOf(Tab.HOME)
@@ -141,7 +142,7 @@ class MainActivity : ComponentActivity() {
                 NavigationBar(containerColor = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
                     Tab.entries.forEach { t ->
                         NavigationBarItem(selected = tab == t, onClick = { tab = t },
-                            icon = { Icon(t.icon, t.label) }, label = { Text(t.label) },
+                            icon = { Icon(painterResource(t.icon), t.label, Modifier.size(24.dp)) }, label = { Text(t.label) },
                             colors = NavigationBarItemDefaults.colors(indicatorColor = Card, selectedIconColor = Ink, selectedTextColor = Ink,
                                 unselectedIconColor = InkSoft, unselectedTextColor = InkSoft))
                     }
@@ -268,7 +269,7 @@ class MainActivity : ComponentActivity() {
                 res.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { teachUtterance = it; heard = it }
             }
             OutlinedTextField(teachUtterance, { teachUtterance = it }, Modifier.fillMaxWidth(), label = { Text("Command") }, shape = RoundedCornerShape(16.dp),
-                trailingIcon = { IconButton({ runCatching { listen.launch(speechIntent("Say the command")) } }) { Icon(MynaIcons.Mic, "Speak", tint = Ink) } })
+                trailingIcon = { IconButton({ runCatching { listen.launch(speechIntent("Say the command")) } }) { Icon(painterResource(R.drawable.mic), "Speak", Modifier.size(22.dp), tint = Ink) } })
             // What speech-to-text produced, so a mis-hearing is caught before teaching.
             heard?.let { Text("Heard: “$it”", style = MaterialTheme.typography.bodySmall, color = InkSoft) }
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
