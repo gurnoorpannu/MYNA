@@ -97,6 +97,25 @@ object Identity {
         )
     }
 
+    /**
+     * Some apps (Zomato's search suggestions) navigate on touch without sending a click event.
+     * When the screen changes with no recorded step, guess the tap: the one clickable on [prev]
+     * whose text shows up on [next]. Null unless exactly one candidate — a wrong guess is worse than none.
+     */
+    fun inferTap(prev: UiNode, next: UiNode): UiNode? {
+        val nextTexts = next.walk().filter { it.visible }.mapNotNull { it.label?.let(::norm) }.toSet()
+        val prevTexts = prev.walk().filter { it.visible }.mapNotNull { it.label?.let(::norm) }.toSet()
+        // Only rows of a scrollable list (suggestions, results): chrome like "Back" lives on both screens.
+        val hits = prev.walk().filter { it.visible && it.clickable && !it.editable && listItem(it) != null }
+            .mapNotNull { n -> primaryText(n)?.let(::norm)?.let { t -> n to t } }
+            .filter { (_, t) -> t.length >= 3 && t in nextTexts }
+            .toList()
+        // A text repeated across many rows ("Restaurant") proves nothing; keep ones specific to one row.
+        val specific = hits.filter { (_, t) -> prev.walk().count { it.visible && it.label?.let(::norm) == t } <= 2 }
+        val best = specific.distinctBy { it.second }.maxByOrNull { it.second.length } ?: return null
+        return best.first.takeIf { specific.count { it.second == best.second } == 1 && prevTexts.isNotEmpty() }
+    }
+
     /** "hi" when ≥20% of letters on screen are Devanagari (dish/brand names often stay English), else "en". */
     fun lang(root: UiNode): String {
         var letters = 0; var deva = 0

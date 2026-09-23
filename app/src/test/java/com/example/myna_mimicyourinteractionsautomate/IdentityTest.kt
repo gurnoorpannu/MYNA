@@ -115,3 +115,25 @@ class RealDumpQuirksTest {
         assertEquals(KeyKind.CHILD_TEXT, t.key!!.by)
     }
 }
+
+class InferTapTest {
+    // Zomato search suggestions: tapping a row opens the restaurant but sends no click event.
+    private fun row(name: String, sub: String) = UiNode(cls = "ViewGroup", clickable = true, children = listOf(
+        UiNode(text = name, cls = "TextView"), UiNode(text = sub, cls = "TextView")))
+    private val suggestions = UiNode(cls = "FrameLayout", children = listOf(
+        UiNode(text = "Back", cls = "ImageButton", clickable = true),
+        UiNode(cls = "RecyclerView", scrollable = true, children = listOf(
+            row("Domino's Pizza", "Restaurant · 7.6 km"), row("Dominos pizza near me", "Search"), row("Shawarmajaan", "Restaurant")))))
+    private val menu = UiNode(cls = "FrameLayout", children = listOf(
+        UiNode(text = "Back", cls = "ImageButton", clickable = true),
+        UiNode(text = "Domino's Pizza", cls = "TextView"), UiNode(text = "Margherita Pizza", cls = "TextView")))
+
+    @Test fun picksTheRowWhoseTitleIsOnTheNextScreen() {
+        val tapped = Identity.inferTap(suggestions, menu)
+        assertEquals("Domino's Pizza", tapped?.let(Identity::primaryText))
+    }
+
+    @Test fun noGuessWhenNothingMatches() {
+        assertEquals(null, Identity.inferTap(suggestions, UiNode(children = listOf(UiNode(text = "Back", clickable = true)))))
+    }
+}

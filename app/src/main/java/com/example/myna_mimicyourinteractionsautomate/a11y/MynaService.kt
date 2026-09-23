@@ -63,6 +63,8 @@ class MynaService : AccessibilityService() {
         private set
     private var fgPkg: String? = null            // package currently in front (launcher counts)
     private var awaitingApp: String? = null      // set during clean start
+    private var prevSettled: Pair<UiNode, Screen>? = null
+    private var stepsAtPrevSettle = 0
     private val activityOf = mutableMapOf<String, String>()
     private var overlay: Button? = null
 
@@ -133,7 +135,8 @@ class MynaService : AccessibilityService() {
         val rec = recorder ?: return
         if (src.isPassword) return stopRecording("safety_gate")   // Phase 2 gate will generalise this
         val (root, node) = snapshotAround(src) ?: return
-        rec.onText(Identity.target(node, root, rec.spoken), src.text?.toString().orEmpty(), screenOf(root, pkg))
+        val text = if (src.isShowingHintText) "" else src.text?.toString().orEmpty()
+        rec.onText(Identity.target(node, root, rec.spoken), text, screenOf(root, pkg))
         updateOverlay()
     }
 
@@ -150,7 +153,15 @@ class MynaService : AccessibilityService() {
         val pkg = live.packageName?.toString() ?: return
         if (pkg == packageName || pkg == launcherPkg || pkg in IGNORED_PACKAGES) return
         val root = UiTree.capture(live)
-        rec.onScreen(screenOf(root, pkg), Identity.compact(root))
+        val screen = screenOf(root, pkg)
+        // New activity but no step since the last settled screen → the app ate the click event.
+        val prev = prevSettled
+        if (prev != null && rec.steps.size == stepsAtPrevSettle && screen.title != prev.second.title) {
+            Identity.inferTap(prev.first, root)?.let { rec.onInferredTap(Identity.target(it, prev.first, rec.spoken), prev.second) }
+        }
+        prevSettled = root to screen
+        stepsAtPrevSettle = rec.steps.size
+        rec.onScreen(screen, Identity.compact(root))
         if (root.walk().any { it.password && it.visible }) stopRecording("safety_gate")
     }
 
@@ -182,6 +193,7 @@ class MynaService : AccessibilityService() {
     fun startRecording(utterance: String, app: String): Boolean {
         val launch = packageManager.getLaunchIntentForPackage(app) ?: return false
         recorder = Recorder(utterance, app).also { it.onLaunch(app) }
+        prevSettled = null
         awaitingApp = app
         performGlobalAction(GLOBAL_ACTION_HOME)
         main.postDelayed({

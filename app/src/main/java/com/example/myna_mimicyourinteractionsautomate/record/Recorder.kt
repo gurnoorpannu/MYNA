@@ -34,6 +34,10 @@ class Recorder(
         add(Step(StepType.KEY, key = key, noise = mistake, why = if (mistake) "undo of previous tap" else ""))
     }
 
+    /** A tap guessed from a screen change (see Identity.inferTap). */
+    fun onInferredTap(target: Target, screen: Screen) =
+        add(Step(StepType.TAP, target = target, screen = screen, why = "inferred: app sent no click event"))
+
     fun onTap(target: Target, screen: Screen) {
         val last = steps.lastOrNull()
         val t = now()
@@ -44,6 +48,8 @@ class Recorder(
     }
 
     fun onText(target: Target, text: String, screen: Screen) {
+        // Field cleared (or showing its placeholder) after a suggestion was picked: keep what was typed.
+        if (text.isBlank()) return
         val i = steps.lastIndex
         // Consecutive edits in the same field collapse into one step with the final text.
         if (i >= 0 && steps[i].type == StepType.TYPE && sameField(steps[i].target, target)) {

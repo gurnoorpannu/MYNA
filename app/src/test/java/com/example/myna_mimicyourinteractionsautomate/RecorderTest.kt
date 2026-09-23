@@ -32,6 +32,12 @@ class RecorderTest {
         assertEquals(2, rec.steps.size)
     }
 
+    @Test fun clearedFieldKeepsTypedText() {
+        rec.onText(search, "Domino's", home)
+        rec.onText(search, "", home)
+        assertEquals("Domino's", rec.steps.single().text)
+    }
+
     @Test fun tapThenBackIsMarkedAsMistake() {
         rec.onTap(tap("Farmhouse"), menu)
         rec.onKey(SystemKey.BACK)
