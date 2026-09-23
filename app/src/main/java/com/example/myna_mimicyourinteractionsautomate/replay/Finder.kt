@@ -103,7 +103,8 @@ object Finder {
     fun tappable(n: UiNode): UiNode = (sequenceOf(n) + n.ancestors()).firstOrNull { it.clickable } ?: n
 
     /** Pop-up rule (T7): only close-type buttons. Never the pop-up's main action. */
-    private val CLOSE = Regex("^(x|×|✕|✖|close|dismiss|not now|skip|no thanks|no, thanks|maybe later|later|cancel)$", RegexOption.IGNORE_CASE)
+    // Not "Cancel": on Amazon's checkout it abandons the purchase flow instead of closing a pop-up.
+    private val CLOSE = Regex("^(x|×|✕|✖|close|dismiss|not now|skip|no thanks|no, thanks|maybe later|later)$", RegexOption.IGNORE_CASE)
 
     /** [anywhere]: also look for a ✕ icon when no dialog/sheet is detected (end-of-run cleanup only). */
     fun closeButton(root: UiNode, anywhere: Boolean = false): UiNode? = visible(root).firstOrNull { n ->

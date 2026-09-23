@@ -39,7 +39,9 @@ class FakeAmazon : Device {
             UiNode(cls = "WebView", t = 200, b = 2200, children = listOf(
                 // Real Amazon: a sponsored banner sits above the results.
                 UiNode(clickable = true, t = 210, b = 290, children = listOf(UiNode(text = "Sponsored"), UiNode(text = "Shop Spigen cases for Galaxy S25 Ultra, top rated"))),
-            ) + catalog.mapIndexed { i, p -> link("Go to detail page for \"$p\"", 300 + i * 300) }), tabs()))
+            ) + catalog.mapIndexed { i, p -> UiNode(t = 300 + i * 300, b = 580 + i * 300, children = listOf(
+                link("Go to detail page for \"$p\"", 300 + i * 300),
+                UiNode(text = "Add to cart", cls = "Button", clickable = true, t = 500 + i * 300, b = 560 + i * 300, r = 300))) }), tabs()))
         // The product page is a web page: nothing marked scrollable, and Add to cart is below the fold.
         "product" -> UiNode(b = 2340, children = listOfNotNull(UiNode(text = product, t = 200, b = 300),
             if (scrolled) link("Add to cart", 1500) else null, link("Buy Now", 1600).takeIf { scrolled }, tabs()))
@@ -55,7 +57,8 @@ class FakeAmazon : Device {
         when {
             n.id == "chrome_search" -> state = "typing"
             state == "results" && n.text?.startsWith("Go to detail page") == true -> { product = n.text.substringAfter("\"").substringBefore("\""); scrolled = false; state = "product" }
-            state == "results" -> error("opened the ad")
+            n.text == "Add to cart" && state == "results" -> cart += n.parent!!.children[0].text!!.substringAfter("\"").substringBefore("\"")
+            state == "results" && n.id != "cart_tab" -> error("opened the ad: $n text=${n.text} bounds=${n.bounds}")
             n.text == "Add to cart" -> cart += product
             n.id == "cart_tab" -> state = "cart"
             n.text == "Proceed to checkout" -> state = "payment"
@@ -118,5 +121,17 @@ class AmazonTest {
         val log = Executor(a).run(r)
         assertEquals(log.reason, Outcome.HANDED_OFF, log.outcome)
         assertTrue(a.cart.single().contains("S25 Ultra"))
+    }
+
+    @Test fun addToCartOnResultsUsesTheBestMatchingRow() = runBlocking {
+        // Amazon results carry an "Add to cart" per row; the demo pressed one right after searching.
+        Llm.mock = true
+        Llm.canned["compile"] = """{"summary":"add a {product} for my {device}","names":["product","device"],"paraphrases":[],"steps":[],"subtasks":[],"noise":[],"questions":[]}"""
+        val direct = rec.copy(steps = rec.steps.filterIndexed { i, _ -> i != 2 })   // type+Enter → Add to cart → Cart → Proceed
+        val r = Compiler.compile(direct).recipe
+        val a = FakeAmazon()
+        val log = Executor(a).run(r, mapOf("product" to "laptop stand", "device" to ""))
+        assertEquals(log.reason, Outcome.HANDED_OFF, log.outcome)
+        assertTrue(a.cart.single() + " | " + log.steps.joinToString(" / ") { "${it.what}: ${it.note}" }, a.cart.single().contains("Laptop Stand"))
     }
 }

@@ -46,6 +46,22 @@ class Executor(
 
     private class Stop(val outcome: Outcome, val reason: String) : Exception(reason)
 
+    /** The last submitted search (steps after it act on its results). */
+    private var lastQuery: String? = null
+
+    private fun bestRowFor(root: UiNode, like: UiNode, query: String): UiNode? {
+        val want = Identity.stems(query).ifEmpty { return null }
+        val twins = root.walk().filter { it.visible && it.clickable && it.label == like.label && it.id == like.id && it.cls == like.cls }.toList()
+        return twins.mapNotNull { n ->
+            // The row: go up until the subtree has real text besides the button itself.
+            val row = n.ancestors().take(4).firstOrNull { a -> a.walk().any { it !== n && (it.label?.length ?: 0) >= 12 } } ?: return@mapNotNull null
+            val text = row.walk().mapNotNull { it.label }.joinToString(" ")
+            if (row.walk().any { c -> c.label?.let(AD::containsMatchIn) == true }) return@mapNotNull null
+            val flat = Identity.loose(text)
+            n to want.count { w -> Identity.loose(w).let { it.isNotEmpty() && flat.contains(it) } }
+        }.filter { it.second > 0 }.maxByOrNull { it.second }?.first
+    }
+
     /** Text typed by the previous step and not submitted yet: if the next target doesn't show up, press Enter. */
     private var unsubmitted: String? = null
 
@@ -138,7 +154,7 @@ class Executor(
         if (device.stopRequested) throw Stop(Outcome.STOPPED, "stopped by user")
         when (step.type) {
             StepType.LAUNCH -> {
-                if (!device.launchClean(step.pkg!!)) throw Stop(Outcome.FAILED, "${step.pkg} is not installed")
+                if (!device.launchClean(step.pkg!!)) throw Stop(Outcome.FAILED, "couldn't open ${step.pkg} (not installed, or it didn't come to the front)")
                 sl.status = "ok"
             }
             StepType.KEY -> { device.key(step.key!!); device.screen(); sl.status = "ok" }
@@ -170,6 +186,9 @@ class Executor(
             checkStuck(root, step, screen.signature, seen, start)
 
             var found = Finder.find(root, target) ?: ocrFind(target)?.let { Finder.Found(it, 4, "ocr \"${it.label}\"") }
+            // Many identical buttons right after a search ("Add to cart" on every Amazon result): use the one
+            // in the row that best matches what was searched, never an ad's.
+            if (found != null && found.candidates > 1 && lastQuery != null) bestRowFor(root, found.node, lastQuery!!)?.let { found = found!!.copy(node = it, how = found!!.how + " in the best-matching row") }
             // A TYPE target that is only a search *button* (Amazon home): tap it to open the real field.
             if (found != null && step.type == StepType.TYPE && !found.node.editable) {
                 val field = root.walk().firstOrNull { it.visible && it.editable }
@@ -189,6 +208,7 @@ class Executor(
                 when (r) {
                     GatedActor.Result.Done -> {
                         if (step.type == StepType.TYPE && !step.submit) unsubmitted = text
+                        if (step.type == StepType.TYPE && step.submit) lastQuery = text
                         verify(step, sl); sl.status = "ok"; return
                     }
                     is GatedActor.Result.Blocked -> throw Stop(Outcome.HANDED_OFF, r.block.reason)
@@ -202,6 +222,7 @@ class Executor(
                 unsubmitted = null
                 root.walk().firstOrNull { it.visible && it.editable }?.let { f ->
                     sl.note = "pressed search for \"$q\""
+                    lastQuery = q
                     device.actor.type(f, q, root, pkg, submit = true)
                     continue
                 }
@@ -248,6 +269,7 @@ class Executor(
             if (field != null) {
                 if (device.actor.type(field, query, root, pkg, submit = true) !is GatedActor.Result.Done)
                     throw Stop(Outcome.FAILED, "couldn't type \"$query\" into the search box")
+                lastQuery = query
                 typed = true; break
             }
             Identity.searchBar(root)?.let { device.actor.tap(it, root, pkg) } ?: break
