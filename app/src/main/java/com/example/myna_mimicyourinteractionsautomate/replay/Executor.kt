@@ -55,12 +55,25 @@ class Executor(
         val log = RunLog(recipe.id, recipe.utterance, device.now())
         val steps = recipe.subtasks.flatMap { it.steps }.filter { !it.noise }
         try {
+            var retries = 0
             steps.forEachIndexed { i, step ->
                 val sl = StepLog(i + 1, step.describe()).also { log.steps += it }
                 onStep(sl, steps.size)
                 val t0 = device.now()
                 val pending = unsubmitted
-                runStep(step, slots, sl, recipe)
+                while (true) {
+                    try { runStep(step, slots, sl, recipe); break }
+                    catch (s: Stop) {
+                        // Opened a wrong result (an ad, a store page) and the next step's button isn't there:
+                        // go back and open the next-best result instead of giving up.
+                        val prev = steps.getOrNull(i - 1)
+                        if (s.outcome != Outcome.STUCK || prev?.goal != "pick_result" || retries >= 2) throw s
+                        retries++
+                        sl.note = "wrong result (${s.reason}); trying the next one"
+                        device.key(SystemKey.BACK)
+                        pickResult(Slots.fill(prev.args["query"], slots).orEmpty(), prev, sl)
+                    }
+                }
                 if (unsubmitted == pending) unsubmitted = null   // any other step consumes it
                 sl.ms = device.now() - t0
             }
@@ -197,8 +210,9 @@ class Executor(
                 openedSearch = true
                 Identity.searchBar(root)?.let { device.actor.tap(it, root, pkg); continue }
             }
-            val list = root.walk().filter { it.visible && it.scrollable }.maxByOrNull { (it.r - it.l) * (it.b - it.t) }
-            if (scrolls < MAX_SCROLLS && list != null) {
+            // Web pages often mark nothing scrollable: then swipe the screen itself.
+            val list = root.walk().filter { it.visible && it.scrollable }.maxByOrNull { (it.r - it.l) * (it.b - it.t) } ?: root
+            if (scrolls < MAX_SCROLLS) {
                 scrolls++
                 device.scroll(list, forward = target.scrollDir != "up")
                 continue
@@ -301,6 +315,8 @@ class Executor(
     }
 
     /** Open the highest result whose title holds most of the search words ("s25ultra phone cases" ~ "…Case for Galaxy S25 Ultra"). */
+    private val opened = mutableSetOf<String>()
+
     private suspend fun pickResult(query: String, step: Step, sl: StepLog) {
         val want = Identity.stems(query).ifEmpty { throw Stop(Outcome.FAILED, "empty search") }
         for (attempt in 0..MAX_SCROLLS) {
@@ -310,17 +326,20 @@ class Executor(
             val best = root.walk().filter { it.visible && it.clickable && !it.editable }.mapNotNull { n ->
                 val title = (n.label ?: Identity.primaryText(n))?.takeIf { it.length >= 12 } ?: return@mapNotNull null
                 val flat = Identity.loose(title)
-                // The search bar echoes the query; a result never equals it exactly.
-                if (flat == Identity.loose(query) || n.id?.contains("search", ignoreCase = true) == true) return@mapNotNull null
+                // The search bar echoes the query; a result never equals it exactly. Ads first on the page aren't results.
+                if (flat == Identity.loose(query) || n.id?.contains("search", ignoreCase = true) == true || title in opened) return@mapNotNull null
+                // The row itself says it's an ad ("Sponsored Ad - …", or a "Sponsored" tag inside the row).
+                if (n.walk().any { c -> c.label?.let(AD::containsMatchIn) == true }) return@mapNotNull null
                 val score = want.count { w -> Identity.loose(w).let { it.isNotEmpty() && flat.contains(it) } }.toDouble() / want.size
                 Triple(n, title, score).takeIf { score >= 0.5 }
             }.sortedWith(compareBy({ -it.third }, { it.first.t })).firstOrNull()
             if (best != null) {
+                opened += best.second
                 sl.level = 1; sl.note = "opened \"${best.second.take(50)}\" (${(best.third * 100).toInt()}% of the search words)"
                 if (device.actor.tap(best.first, root, pkg) is GatedActor.Result.Blocked) throw Stop(Outcome.HANDED_OFF, "blocked opening a result")
                 device.screen(); sl.status = "ok"; return
             }
-            val list = root.walk().filter { it.visible && it.scrollable }.maxByOrNull { (it.r - it.l) * (it.b - it.t) } ?: break
+            val list = root.walk().filter { it.visible && it.scrollable }.maxByOrNull { (it.r - it.l) * (it.b - it.t) } ?: root
             device.scroll(list, forward = true)
         }
         throw Stop(Outcome.STUCK, "no result matches \"$query\"")
@@ -386,6 +405,7 @@ class Executor(
 
     companion object {
         const val MAX_SCROLLS = 5
+        private val AD = Regex("^(sponsored|ad)\\b|\\bsponsored (ad|information)\\b", RegexOption.IGNORE_CASE)
         const val SHEET_ANIMATION_MS = 800L
         const val USER_TAP_WAIT_MS = 30_000L
         private val CONFIRM = Regex("^(add item|add to cart|add|done|confirm|continue|save|apply|update)\\b", RegexOption.IGNORE_CASE)

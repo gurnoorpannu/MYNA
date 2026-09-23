@@ -24,6 +24,7 @@ import org.junit.Test
 /** Amazon-shaped fake: search bar button → field + Go → web results → product → Add to cart → cart → payment. */
 class FakeAmazon : Device {
     var state = "home"; var query = ""; var product = ""; val cart = mutableListOf<String>()
+    var scrolled = false
     private var clock = 0L
     private val catalog = listOf("Spigen Liquid Air Case for Galaxy S25 Ultra", "Ringke Fusion Clear Case for Galaxy S25 Ultra",
         "AmazonBasics Adjustable Laptop Stand for Desk", "Portronics My Buddy Laptop Stand, Aluminium")
@@ -35,8 +36,13 @@ class FakeAmazon : Device {
         "home" -> UiNode(b = 2340, children = listOf(link("Search or ask a question", 100, "chrome_search"), tabs()))
         "typing" -> UiNode(b = 2340, children = listOf(UiNode(hint = "Search or ask a question", id = "rs_search_src_text", editable = true, clickable = true, t = 100, b = 180), tabs()))
         "results" -> UiNode(b = 2340, children = listOf(link(query, 100, "chrome_search"),
-            UiNode(cls = "WebView", scrollable = true, t = 200, b = 2200, children = catalog.mapIndexed { i, p -> link("Go to detail page for \"$p\"", 300 + i * 300) }), tabs()))
-        "product" -> UiNode(b = 2340, children = listOf(UiNode(text = product, t = 200, b = 300), link("Add to cart", 1500), link("Buy Now", 1600), tabs()))
+            UiNode(cls = "WebView", t = 200, b = 2200, children = listOf(
+                // Real Amazon: a sponsored banner sits above the results.
+                UiNode(clickable = true, t = 210, b = 290, children = listOf(UiNode(text = "Sponsored"), UiNode(text = "Shop Spigen cases for Galaxy S25 Ultra, top rated"))),
+            ) + catalog.mapIndexed { i, p -> link("Go to detail page for \"$p\"", 300 + i * 300) }), tabs()))
+        // The product page is a web page: nothing marked scrollable, and Add to cart is below the fold.
+        "product" -> UiNode(b = 2340, children = listOfNotNull(UiNode(text = product, t = 200, b = 300),
+            if (scrolled) link("Add to cart", 1500) else null, link("Buy Now", 1600).takeIf { scrolled }, tabs()))
         "cart" -> UiNode(b = 2340, children = listOf(UiNode(text = cart.joinToString(), t = 300, b = 400), UiNode(text = "10% off with HDFC credit card", t = 500, b = 550),
             link("Proceed to checkout", 700), tabs()))
         "payment" -> UiNode(b = 2340, children = listOf(UiNode(text = "Pay by any UPI App", t = 300, b = 360), UiNode(text = "Add a new credit or debit card", t = 400, b = 460),
@@ -48,7 +54,8 @@ class FakeAmazon : Device {
     private fun click(n: UiNode): Boolean {
         when {
             n.id == "chrome_search" -> state = "typing"
-            state == "results" && n.text!!.startsWith("Go to detail page") -> { product = n.text.substringAfter("\"").substringBefore("\""); state = "product" }
+            state == "results" && n.text?.startsWith("Go to detail page") == true -> { product = n.text.substringAfter("\"").substringBefore("\""); scrolled = false; state = "product" }
+            state == "results" -> error("opened the ad")
             n.text == "Add to cart" -> cart += product
             n.id == "cart_tab" -> state = "cart"
             n.text == "Proceed to checkout" -> state = "payment"
@@ -57,7 +64,7 @@ class FakeAmazon : Device {
     }
     override suspend fun launchClean(pkg: String) = true.also { state = "home" }
     override fun key(key: SystemKey) {}
-    override fun scroll(list: UiNode, forward: Boolean) = false
+    override fun scroll(list: UiNode, forward: Boolean) = true.also { if (state == "product") scrolled = true }
     override suspend fun ocr() = emptyList<OcrLine>()
     override suspend fun ask(question: String, options: List<String>): String? = null
     override fun say(text: String) {}
