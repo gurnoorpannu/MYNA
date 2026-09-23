@@ -24,7 +24,8 @@ object IntentMatcher {
     sealed interface Decision {
         data class Run(val recipe: Recipe, val values: Map<String, String>, val confirm: String? = null) : Decision
         /** Ask for [slot]; [rest] are the other unsaid blanks, asked next. */
-        data class AskSlot(val recipe: Recipe, val values: Map<String, String>, val slot: String, val question: String, val rest: List<String> = emptyList()) : Decision
+        data class AskSlot(val recipe: Recipe, val values: Map<String, String>, val slot: String, val question: String,
+                           val rest: List<String> = emptyList(), val skippable: Boolean = true) : Decision
         data class DidYouMean(val recipe: Recipe, val values: Map<String, String>, val question: String) : Decision
         data class Unknown(val utterance: String) : Decision
         data object Report : Decision
@@ -113,11 +114,17 @@ object IntentMatcher {
         return Fill(values, said)
     }
 
+    /** Blanks that ARE a search ("{restaurant}" typed on its own): leaving them out would search for nothing. */
+    fun required(r: Recipe): Set<String> = r.subtasks.flatMap { it.steps }
+        .filter { it.type == com.example.myna_mimicyourinteractionsautomate.recipe.StepType.TYPE || it.goal == "search" }
+        .mapNotNull { s -> Regex("^\\s*\\{(\\w+)\\}\\s*$").find(s.text.orEmpty())?.groupValues?.get(1) }.toSet()
+
     fun ask(r: Recipe, values: Map<String, String>, missing: List<String>): Decision.AskSlot {
         val s = missing.first()
         val last = r.slots[s]?.let { it.value ?: it.default }
-        return Decision.AskSlot(r, values, s, "Which ${s.replace('_', ' ')}?" + (last?.let { " Last time it was $it —" } ?: "") +
-            " or say none to leave it out.", missing.drop(1))
+        val skippable = s !in required(r)
+        return Decision.AskSlot(r, values, s, "Which ${s.replace('_', ' ')}?" + (last?.let { " Last time it was $it" } ?: "") +
+            (if (skippable) " — or say none to leave it out." else "."), missing.drop(1), skippable)
     }
 
     /** The whole decision for one spoken command. */

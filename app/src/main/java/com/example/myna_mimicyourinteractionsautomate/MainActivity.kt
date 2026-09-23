@@ -242,7 +242,7 @@ class MainActivity : ComponentActivity() {
         // Quick answers for MYNA's questions (they wrap instead of squeezing).
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             (pending as? IntentMatcher.Decision.AskSlot)?.let { q ->
-                Chip("None") { scope.launch { onUserSaid("none") } }
+                if (q.skippable) Chip("None") { scope.launch { onUserSaid("none") } }
                 q.recipe.slots[q.slot]?.value?.let { last -> Chip("Same ($last)") { scope.launch { onUserSaid("same") } } }
             }
             if (pending is IntentMatcher.Decision.DidYouMean || pending is IntentMatcher.Decision.Unknown ||
@@ -521,6 +521,9 @@ class MainActivity : ComponentActivity() {
                     YES.containsMatchIn(text) -> p.values[p.slot].orEmpty()
                     Regex("^(none|nothing|skip|no|leave it)\\b", RegexOption.IGNORE_CASE).containsMatchIn(text) -> ""
                     else -> text.trim()
+                }
+                if (v.isBlank() && !p.skippable) {   // it's the search itself: can't be empty
+                    pending = p; myna("I need a ${p.slot.replace('_', ' ')} to search for. Which one?"); return
                 }
                 val values = p.values + (p.slot to v)
                 if (p.rest.isNotEmpty()) handle(IntentMatcher.ask(p.recipe, values, p.rest)) else run(p.recipe, values)

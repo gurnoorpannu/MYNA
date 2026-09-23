@@ -53,8 +53,9 @@ class Executor(
         val want = Identity.stems(query).ifEmpty { return null }
         val twins = root.walk().filter { it.visible && it.clickable && it.label == like.label && it.id == like.id && it.cls == like.cls }.toList()
         return twins.mapNotNull { n ->
-            // The row: go up until the subtree has real text besides the button itself.
-            val row = n.ancestors().take(4).firstOrNull { a -> a.walk().any { it !== n && (it.label?.length ?: 0) >= 12 } } ?: return@mapNotNull null
+            // The row: the list card if there is one, else go up (Zomato nests ADD 5 deep) until there's real text.
+            val row = Identity.listItem(n)?.takeIf { c -> c.walk().any { it !== n && (it.label?.length ?: 0) >= 12 } }
+                ?: n.ancestors().take(7).firstOrNull { a -> a.walk().any { it !== n && (it.label?.length ?: 0) >= 12 } } ?: return@mapNotNull null
             val text = row.walk().mapNotNull { it.label }.joinToString(" ")
             // A sponsored PRODUCT with its own Add to cart is still that product (23 Sep: the only visible stand
             // was "Sponsored Ad - Adjustable Laptop Stand…"). Banners never have these buttons, so they can't match.
@@ -300,7 +301,8 @@ class Executor(
             // Arrived: after at least one hop, the page names the pick as a heading (other "Domino's…" rows don't matter).
             if (heading && hop > 0) { sl.status = "ok"; sl.note = "opened \"$pick\" after $hop tap(s)"; return }
             val tapTarget = rows.firstOrNull()?.let(Finder::tappable)
-                ?: if (heading && hop > 0) null else ocrFind(com.example.myna_mimicyourinteractionsautomate.recipe.Target(label = pick))
+                ?: if (heading && hop > 0) null else ocrFind(com.example.myna_mimicyourinteractionsautomate.recipe.Target(label = pick),
+                    skipHeader = root.t + (root.b - root.t) * 12 / 100)
             if (tapTarget == null) {
                 if (heading) { sl.status = "ok"; sl.note = "opened \"$pick\" after $hop tap(s)"; return }
                 // Pop-up over the results/page: close-type buttons only (T7).
@@ -446,9 +448,10 @@ class Executor(
     }
 
     /** Last resort for elements with no accessible text (Zomato's Compose suggestions): read the pixels. */
-    private suspend fun ocrFind(t: com.example.myna_mimicyourinteractionsautomate.recipe.Target): UiNode? {
+    private suspend fun ocrFind(t: com.example.myna_mimicyourinteractionsautomate.recipe.Target, skipHeader: Int = 0): UiNode? {
         val want = (t.key?.takeIf { it.by in OCR_KEYS }?.value ?: t.label)?.let(Identity::loose)?.takeIf { it.length >= 2 } ?: return null
-        val lines = device.ocr()
+        // The header ("< Domino's Pizza" = back arrow + search echo) is never the result.
+        val lines = device.ocr().filter { it.t >= skipHeader && !it.text.trimStart().startsWith("<") }
         val line = lines.firstOrNull { Identity.loose(it.text) == want }
             ?: lines.filter { Identity.loose(it.text).startsWith(want) }.minByOrNull { it.t }
             ?: lines.filter { Identity.loose(it.text).contains(want) }.minByOrNull { it.t }

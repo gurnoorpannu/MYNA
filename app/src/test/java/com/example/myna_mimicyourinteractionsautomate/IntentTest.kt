@@ -42,7 +42,7 @@ class IntentTest {
         assertTrue(d is Decision.AskSlot)
         d as Decision.AskSlot
         assertEquals("restaurant", d.slot); assertEquals("Farmhouse", d.values["item"])
-        assertEquals("Which restaurant? Last time it was Domino's — or say none to leave it out.", d.question)
+        assertEquals("Which restaurant? Last time it was Domino's — or say none to leave it out.", d.question)   // recipe has no search step here
     }
 
     @Test fun twoChangedBlanksAreConfirmedFirst() = runBlocking {
