@@ -17,6 +17,8 @@ class Recorder(
     private val now: () -> Long = System::currentTimeMillis,
 ) {
     val startedAt = now()
+    /** Words of the command, used to pick which card text anchors a tap. */
+    val spoken: Set<String> = utterance.lowercase().split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length >= 3 }.toSet()
     val steps = mutableListOf<Step>()
     private val snapshots = mutableMapOf<String, String>()
     private var lastTapAt = 0L

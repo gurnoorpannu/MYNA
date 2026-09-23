@@ -121,7 +121,7 @@ class MynaService : AccessibilityService() {
         val rec = recorder ?: return
         if (pkg == launcherPkg) return
         val (root, node) = snapshotAround(src) ?: return
-        rec.onTap(Identity.target(node, root), screenOf(root, pkg))
+        rec.onTap(Identity.target(node, root, rec.spoken), screenOf(root, pkg))
         updateOverlay()
     }
 
@@ -129,7 +129,7 @@ class MynaService : AccessibilityService() {
         val rec = recorder ?: return
         if (src.isPassword) return stopRecording("safety_gate")   // Phase 2 gate will generalise this
         val (root, node) = snapshotAround(src) ?: return
-        rec.onText(Identity.target(node, root), src.text?.toString().orEmpty(), screenOf(root, pkg))
+        rec.onText(Identity.target(node, root, rec.spoken), src.text?.toString().orEmpty(), screenOf(root, pkg))
         updateOverlay()
     }
 

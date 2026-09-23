@@ -26,8 +26,8 @@ class UiNode(
 
     init { children.forEach { it.parent = this } }
 
-    /** Own visible text, else content description. Blank counts as none. */
-    val label: String? get() = text?.takeIf { it.isNotBlank() }?.trim() ?: desc?.takeIf { it.isNotBlank() }?.trim()
+    /** Own visible text, else content description. Blank or icon-font-only (Zomato's "\ue922") counts as none. */
+    val label: String? get() = clean(text) ?: clean(desc)
 
     val index: Int get() = parent?.children?.indexOf(this) ?: 0
     val bounds: List<Int> get() = listOf(l, t, r, b)
@@ -38,6 +38,8 @@ class UiNode(
     }
 
     fun ancestors(): Sequence<UiNode> = generateSequence(parent) { it.parent }
+
+    private fun clean(s: String?) = s?.filterNot { it in '\uE000'..'\uF8FF' }?.trim()?.takeIf { it.isNotEmpty() }
 
     override fun toString() = "${cls ?: "?"}(${label ?: id ?: ""})"
 }

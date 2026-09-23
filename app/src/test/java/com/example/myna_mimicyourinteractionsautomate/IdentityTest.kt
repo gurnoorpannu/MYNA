@@ -73,3 +73,45 @@ class IdentityTest {
         assertTrue(c.contains("EditText hint=\"Search within menu\" #search [tap] [edit]"))
     }
 }
+
+/** Shapes copied from the real 23 Sep Zomato/Amazon dumps. */
+class RealDumpQuirksTest {
+    // Zomato dish card: section tag, title twice (image desc + text), icon-font "+" as the tappable node.
+    private fun zomatoCard(section: String, dish: String, price: String, y: Int) = UiNode(cls = "FrameLayout", t = y, b = y + 400, children = listOf(
+        UiNode(text = "In $section", cls = "TextView", t = y),
+        UiNode(desc = dish, cls = "ImageView", t = y + 10),
+        UiNode(text = dish, cls = "TextView", t = y + 20),
+        UiNode(text = price, cls = "TextView", t = y + 30),
+        UiNode(id = "ll_root", cls = "LinearLayout", t = y + 300, children = listOf(
+            UiNode(text = "ADD", cls = "TextView", t = y + 300),
+            UiNode(text = "", id = "button_add", cls = "View", clickable = true, t = y + 300),
+        )),
+    ))
+
+    private val menu = UiNode(cls = "FrameLayout", b = 2400, children = listOf(
+        UiNode(cls = "RecyclerView", scrollable = true, t = 400, b = 2400, children = listOf(
+            zomatoCard("Recommended for you", "Margherita Pizza", "₹109", 400),
+            zomatoCard("2in1 Cheese Burst", "Double Cheeseburst - Margherita (Reg)", "₹299", 800),
+            zomatoCard("Value Meals", "Farmhouse", "₹459", 1200),
+        )),
+    ))
+
+    @Test fun zomatoAddAnchorsOnSpokenDishDespiteRepeatsAndGlyphs() {
+        val add = menu.walk().filter { it.id == "button_add" }.first()
+        assertEquals(null, add.label)                                   // "" is not a label
+        val t = Identity.target(add, menu, setOf("order", "margherita", "pizza", "domino"))
+        assertEquals(KeyKind.NEAR_TEXT, t.key!!.by)
+        assertEquals("Margherita Pizza", t.key!!.value)
+        assertTrue("Farmhouse" in t.neighbours)
+    }
+
+    @Test fun rotatingSearchHintAndWebviewIdsDontBecomeKeys() {
+        assertEquals("Search", Identity.norm("Search \"homestyle meals\""))
+        assertEquals("Domino's Pizza", Identity.norm("Domino's Pizza"))
+        val root = UiNode(children = listOf(
+            UiNode(text = "", id = "pp-mDxkUF-246", cls = "View", clickable = true, children = listOf(UiNode(text = "Pay by any UPI App"))),
+        ))
+        val t = Identity.target(root.children[0], root)
+        assertEquals(KeyKind.CHILD_TEXT, t.key!!.by)
+    }
+}

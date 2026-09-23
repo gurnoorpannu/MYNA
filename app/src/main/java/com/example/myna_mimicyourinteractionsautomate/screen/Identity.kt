@@ -8,7 +8,11 @@ import com.example.myna_mimicyourinteractionsautomate.recipe.UniqueKey
 /** Element identity (design §4.1) and screen signatures. Pure functions over [UiNode]. */
 object Identity {
 
-    fun target(n: UiNode, root: UiNode): Target {
+    /**
+     * [spoken] = words of the teach command; an anchor containing one ("Margherita Pizza" for "…margherita…")
+     * wins over other unique card texts ("In Recommended for you").
+     */
+    fun target(n: UiNode, root: UiNode, spoken: Set<String> = emptySet()): Target {
         // An edit field's text is what the user typed, not its name.
         val label = if (n.editable) (n.hint ?: n.desc)?.takeIf { it.isNotBlank() } else n.label
         val subTexts = n.walk().drop(1).mapNotNull { it.label }.filter { it != label }.distinct().take(6).toList()
@@ -22,25 +26,40 @@ object Identity {
             index = n.index,
             nearby = nearby,
             neighbours = neighbours(n),
-            key = uniqueKey(n, label, subTexts, nearby, root),
+            key = uniqueKey(n, label, subTexts, anchor, root, spoken),
             bounds = n.bounds,
         )
     }
 
     /** SUGILITE-style: the cheapest thing that is unique on this screen. */
-    private fun uniqueKey(n: UiNode, label: String?, subTexts: List<String>, nearby: List<String>, root: UiNode): UniqueKey {
+    private fun uniqueKey(n: UiNode, label: String?, subTexts: List<String>, anchor: UiNode, root: UiNode, spoken: Set<String>): UniqueKey {
         val visible = root.walk().filter { it.visible }.toList()
-        val labelCount = visible.mapNotNull { it.label }.groupingBy { it }.eachCount()
-        val unique = { s: String -> labelCount[s] == 1 }
+        val labelCount = visible.mapNotNull { it.label?.let(::norm) }.groupingBy { it }.eachCount()
+        val unique = { s: String -> labelCount[norm(s)] == 1 }
+        // A card may repeat its own title (image desc + text): unique = appears nowhere outside the card.
+        val inAnchor = anchor.walk().toSet()
+        val onlyInAnchor = { s: String -> visible.none { it !in inAnchor && it.label?.let(::norm) == norm(s) } }
+        val nearby = anchor.walk().filter { it !in n.walk() }.mapNotNull { it.label }.distinct()
+            .filter { isStable(it) && onlyInAnchor(it) }
+            .sortedByDescending { t -> spoken.any { w -> t.contains(w, ignoreCase = true) } }
         return when {
-            label != null && !n.editable && unique(label) -> UniqueKey(KeyKind.LABEL, label)
-            n.id != null && visible.count { it.id == n.id } == 1 -> UniqueKey(KeyKind.ID, n.id)
-            else -> subTexts.firstOrNull { unique(it) && isStable(it) }?.let { UniqueKey(KeyKind.CHILD_TEXT, it) }
+            label != null && !n.editable && unique(label) -> UniqueKey(KeyKind.LABEL, norm(label))
+            n.id != null && isStableId(n.id) && visible.count { it.id == n.id } == 1 -> UniqueKey(KeyKind.ID, n.id)
+            else -> subTexts.firstOrNull { unique(it) && isStable(it) }?.let { UniqueKey(KeyKind.CHILD_TEXT, norm(it)) }
                 // "Add" on the Margherita card: anchor on the card's unique text.
-                ?: nearby.firstOrNull { unique(it) && isStable(it) }?.let { UniqueKey(KeyKind.NEAR_TEXT, it) }
+                ?: nearby.firstOrNull()?.let { UniqueKey(KeyKind.NEAR_TEXT, norm(it)) }
                 ?: UniqueKey(KeyKind.POSITION, n.bounds.joinToString(","))
         }
     }
+
+    /**
+     * Label as used for matching: rotating quoted parts dropped
+     * (Zomato's search bar: `Search "homestyle meals"` today, `Search "biryani"` tomorrow → `Search`).
+     */
+    fun norm(s: String) = s.replace(Regex("[\"“”][^\"“”]*[\"“”]"), "").replace(Regex("\\s+"), " ").trim()
+
+    /** Webview ids like "pp-mDxkUF-246" are regenerated every load. */
+    fun isStableId(id: String) = !Regex("\\d{3,}").containsMatchIn(id)
 
     /** The row/card the node lives in: the child of the nearest scrollable list, else a few parents up. */
     fun listItem(n: UiNode): UiNode? =
@@ -54,7 +73,12 @@ object Identity {
         return item.parent!!.children.filter { it !== item }.mapNotNull(::primaryText).distinct().take(15)
     }
 
-    fun primaryText(n: UiNode): String? = n.walk().mapNotNull { it.label }.firstOrNull(::isStable)
+    /** A card's title: its most repeated stable text (Zomato repeats the dish name as image desc), else the first. */
+    fun primaryText(n: UiNode): String? {
+        val texts = n.walk().mapNotNull { it.label }.filter(::isStable).toList()
+        val counts = texts.groupingBy { it }.eachCount()
+        return texts.maxByOrNull { counts[it]!! }   // maxBy keeps the first on ties
+    }
 
     /** Not a price, count or time: those change between runs. */
     fun isStable(s: String) = s.length in 2..60 && s.count(Char::isDigit) <= 1
