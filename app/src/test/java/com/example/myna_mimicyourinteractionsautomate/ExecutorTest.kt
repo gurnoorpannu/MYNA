@@ -77,6 +77,10 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
             UiNode(cls = "RecyclerView", scrollable = true, t = 400, b = 2400, children = listOf(
                 card("Margherita Pizza", 400), card("Farmhouse Pizza", 800), card("Peppy Paneer Pizza", 1200))),
             if (cart.isNotEmpty()) UiNode(id = "cart_bar", clickable = true, t = 2300, b = 2400, children = listOf(t("View Cart", 2310))) else null))
+        // 23 Sep: a "coupon not applied" pop-up covered the cart right after Continue.
+        "coupon" -> UiNode(cls = "FrameLayout", b = 2400, children = listOf(t("Coupon not applied", 900), t("Save ₹50 with HUNGRY50", 960),
+            UiNode(text = "Apply coupon", cls = "Button", clickable = true, t = 1100, b = 1160),
+            UiNode(id = "coupon_close", desc = "Close", clickable = true, t = 800, b = 860)))
         "cart" -> UiNode(cls = "FrameLayout", b = 2400, children = listOf(t("Domino's Pizza", 100), t(cart.joinToString(), 300),
             UiNode(id = "cv_checkout_container", clickable = true, t = 2200, b = 2400, children = listOf(t("₹299", 2210), t("Place Order", 2260)))))
         else -> error(state)
@@ -96,6 +100,7 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
     override fun say(text: String) {}
     override fun now() = clock.also { clock += 100 }
     override suspend fun pause(ms: Long) { clock += ms; if (userTapsSheet && prompts.isNotEmpty() && state == "sheet" && crust != null) { cart += sheetFor!!; state = "menu" } }
+    var couponPopup = false
     var ignoresA11yTaps = false       // Zomato's real "Add item": only a finger works
     var userTapsSheet = false
     val prompts = mutableListOf<String>()
@@ -106,7 +111,7 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
         taps += n.label ?: n.id ?: n.cls ?: "?"
         when {
             n.label == "Not now" -> popup = false
-            n.label == "Order now" -> error("tapped the pop-up's main action!")
+            n.label == "Order now" || n.label == "Apply coupon" -> error("tapped the pop-up's main action!")
             n.id == "search_edit_text" -> state = "search"
             n.cls == "OcrText" && n.text == "Domino's Pizza" -> state = "results"
             n.id == "top_row" || n.id == "res_card" -> state = "menu"
@@ -116,7 +121,8 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
             // Add item only works once the required crust is chosen.
             (n.cls == "OcrText" && n.text!!.startsWith("Add item")) || (state == "sheet" && n.l == 360 && n.t == 2025) ->
                 if (crust != null && !ignoresA11yTaps) { cart += sheetFor!!; state = "menu" }
-            n.id == "cart_bar" -> state = "cart"
+            n.id == "cart_bar" -> state = if (couponPopup) "coupon" else "cart"
+            n.id == "coupon_close" -> state = "cart"
             n.id == "cv_checkout_container" -> error("tapped Place Order!")
         }
         return true
@@ -166,6 +172,13 @@ class ExecutorTest {
         assertEquals(log.reason, Outcome.HANDED_OFF, log.outcome)
         assertEquals(listOf("Margherita Pizza"), z.cart)
         assertTrue(z.prompts.single().contains("tap"))
+    }
+
+    @Test fun couponPopupOverCartIsClosedThenHandsOff() = runBlocking {
+        val z = FakeZomato().apply { couponPopup = true }
+        val log = Executor(z).run(recipe, demo)
+        assertEquals(log.reason, Outcome.HANDED_OFF, log.outcome)
+        assertTrue(log.steps.any { it.what.startsWith("close pop-up") })
     }
 
     @Test fun changedItemAddsFarmhouse() = runBlocking {

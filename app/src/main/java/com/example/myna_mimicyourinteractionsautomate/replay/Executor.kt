@@ -76,12 +76,24 @@ class Executor(
      */
     private suspend fun finish(recipe: Recipe, log: RunLog) {
         var (root, pkg) = device.screen() ?: throw Stop(Outcome.FAILED, "screen unreadable at the end")
-        if (recipe.end == End.PAYMENT_SCREEN) repeat(3) {
-            if (SafetyGate.check(root, pkg) != null) return@repeat
+        // Towards the payment screen: close pop-ups (coupons, offers), tap View Cart/Continue, or give the page a second.
+        var checkoutTaps = 0
+        if (recipe.end == End.PAYMENT_SCREEN) for (i in 0 until 6) {
+            if (SafetyGate.check(root, pkg) != null) break
+            val close = Finder.closeButton(root)
             val next = root.walk().firstOrNull { n -> n.visible && n.clickable && n.walk().any { c -> c.label?.let(CHECKOUT::containsMatchIn) == true } }
-                ?: return@repeat
-            log.steps += StepLog(log.steps.size + 1, "tap ${next.walk().mapNotNull { it.label }.firstOrNull { CHECKOUT.containsMatchIn(it) }}", "ok", note = "towards checkout")
-            if (device.actor.tap(next, root, pkg) !is GatedActor.Result.Done) return@repeat
+            when {
+                close != null -> {
+                    log.steps += StepLog(log.steps.size + 1, "close pop-up (${close.label ?: close.id})", "ok", note = "towards checkout")
+                    device.actor.tap(close, root, pkg)
+                }
+                next != null && checkoutTaps < 3 -> {
+                    checkoutTaps++
+                    log.steps += StepLog(log.steps.size + 1, "tap ${next.walk().mapNotNull { it.label }.firstOrNull { CHECKOUT.containsMatchIn(it) }}", "ok", note = "towards checkout")
+                    if (device.actor.tap(next, root, pkg) !is GatedActor.Result.Done) break
+                }
+                else -> device.pause(1_000)   // cart sheet still sliding in / loading
+            }
             device.screen()?.let { root = it.first; pkg = it.second }
         }
         val block = SafetyGate.check(root, pkg)
