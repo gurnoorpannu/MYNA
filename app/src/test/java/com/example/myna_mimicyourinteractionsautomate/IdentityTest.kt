@@ -275,6 +275,10 @@ class SheetTest {
                     UiNode(text = "1", id = "text_view_title", l = 131, t = 2030, r = 228, b = 2165))),
                 UiNode(cls = "ViewGroup", l = 360, t = 2025, r = 1046, b = 2171)))))))
 
+    @Test fun amazonContentRootIsNotASheet() {
+        assertEquals(false, Identity.isModal(UiNode(children = listOf(UiNode(id = "appcx_bottom_sheet_root", r = 1080, b = 2047)))))
+    }
+
     @Test fun findsTheBlankAddItemBox() {
         assertTrue(Identity.isModal(sheet))
         assertEquals(listOf(360, 2025, 1046, 2171), Identity.blankSheetButton(sheet)?.bounds)

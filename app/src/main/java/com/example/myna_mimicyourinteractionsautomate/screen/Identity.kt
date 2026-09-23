@@ -144,8 +144,9 @@ object Identity {
 
     /** A bottom sheet / dialog is open (Material's "touch_outside" scrim, or a BottomSheet / Dialog container). */
     fun isModal(root: UiNode): Boolean = root.walk().any { n ->
-        n.visible && (n.id == "touch_outside" || n.id?.contains("bottom_sheet") == true ||
-            n.cls?.let { it.contains("BottomSheet") || it.endsWith("Dialog") } == true)
+        // Exact markers only: Amazon names its whole content root "appcx_bottom_sheet_root".
+        n.visible && (n.id == "touch_outside" || n.id == "design_bottom_sheet" ||
+            n.cls?.let { it.endsWith("BottomSheetDialog") || it.endsWith("Dialog") } == true)
     }
 
     /** Options currently selected on screen (radio/checkbox rows): the row's title, e.g. "New Hand Tossed", "Regular". */

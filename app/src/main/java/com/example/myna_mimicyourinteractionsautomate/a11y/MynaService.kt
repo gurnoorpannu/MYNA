@@ -67,7 +67,9 @@ class MynaService : AccessibilityService(), Device {
 
     companion object {
         const val TAG = "Myna"
-        const val SETTLE_MS = 600L     // no UI change for this long = screen settled (recorder + replay)
+        const val SETTLE_MS = 600L
+        private val NOISY_EVENTS = setOf(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED, AccessibilityEvent.TYPE_VIEW_SCROLLED,
+            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED, AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED)     // no UI change for this long = screen settled (recorder + replay)
         @Volatile var instance: MynaService? = null
         /** MainActivity listens so the list refreshes when a compile or run finishes. */
         @Volatile var onChanged: (() -> Unit)? = null
@@ -141,6 +143,9 @@ class MynaService : AccessibilityService(), Device {
     override fun onAccessibilityEvent(e: AccessibilityEvent) {
         val pkg = e.packageName?.toString() ?: return
         if (pkg == packageName || pkg in IGNORED_PACKAGES || pkg in imePkgs) return
+        // Debug: which events does a tap inside a web page produce? (content/scroll noise skipped)
+        if (recorder != null && e.eventType !in NOISY_EVENTS)
+            Log.d(TAG, "ev ${AccessibilityEvent.eventTypeToString(e.eventType)} ${e.className} \"${e.text.joinToString(" ").take(60)}\" desc=${e.contentDescription?.take(40)}")
         when (e.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
                 onWindow(pkg, e.className?.toString())
