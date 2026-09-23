@@ -248,7 +248,7 @@ class Executor(
                 Identity.searchBar(root)?.let { device.actor.tap(it, root, pkg); continue }
             }
             // Web pages often mark nothing scrollable: then swipe the screen itself.
-            val list = root.walk().filter { it.visible && it.scrollable }.maxByOrNull { (it.r - it.l) * (it.b - it.t) } ?: root
+            val list = pageScroller(root)
             if (scrolls < MAX_SCROLLS) {
                 scrolls++
                 device.scroll(list, forward = target.scrollDir != "up")
@@ -386,11 +386,19 @@ class Executor(
                 if (device.actor.tap(best.first, root, pkg) is GatedActor.Result.Blocked) throw Stop(Outcome.HANDED_OFF, "blocked opening a result")
                 device.screen(); sl.status = "ok"; return
             }
-            val list = root.walk().filter { it.visible && it.scrollable }.maxByOrNull { (it.r - it.l) * (it.b - it.t) } ?: root
+            val list = pageScroller(root)
             device.scroll(list, forward = true)
         }
         throw Stop(Outcome.STUCK, "no result matches \"$query\"")
     }
+
+    /**
+     * What to scroll to reach more of the page: the biggest vertical list if it's a real part of the screen,
+     * else the page itself (Amazon's product page: the only "scrollable" is a sideways offers carousel).
+     */
+    private fun pageScroller(root: UiNode): UiNode =
+        root.walk().filter { it.visible && it.scrollable && (it.b - it.t) * 10 >= (root.b - root.t) * 4 && !(it.cls?.contains("Horizontal") ?: false) }
+            .maxByOrNull { (it.r - it.l) * (it.b - it.t) } ?: root
 
     /** Habit defaults: make the sheet show the same options as the demo (required groups block "Add item" otherwise). */
     private suspend fun selectChoices(choices: List<String>, sl: StepLog) {
@@ -405,7 +413,7 @@ class Executor(
                     if (!toggle.checked) { device.actor.tap(Identity.optionRow(toggle)?.let(Finder::tappable) ?: toggle, root, pkg); picked += choice }
                     break
                 }
-                val list = root.walk().filter { it.visible && it.scrollable }.maxByOrNull { (it.r - it.l) * (it.b - it.t) }
+                val list = pageScroller(root)
                 if (list == null || scrolls++ >= 3) break          // not on this sheet: leave the app's default
                 device.scroll(list, forward = true)
             }
