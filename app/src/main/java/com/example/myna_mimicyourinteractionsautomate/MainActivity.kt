@@ -6,6 +6,10 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.speech.RecognizerIntent
+import androidx.compose.material3.IconButton
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -97,11 +101,25 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun TeachCard() {
         Text("Teach", style = MaterialTheme.typography.titleMedium)
-        // ponytail: typed command until Phase 5 brings voice
         var utterance by remember { mutableStateOf("Order a Margherita pizza from Domino's on Zomato") }
+        var heard by remember { mutableStateOf<String?>(null) }
+        val listen = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+            res.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { utterance = it; heard = it }
+        }
         var app by remember { mutableStateOf(APPS[0].second) }
         var error by remember { mutableStateOf<String?>(null) }
-        OutlinedTextField(utterance, { utterance = it }, Modifier.fillMaxWidth(), label = { Text("Command") })
+        OutlinedTextField(utterance, { utterance = it }, Modifier.fillMaxWidth(), label = { Text("Command") },
+            trailingIcon = {
+                IconButton(onClick = {
+                    val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                        .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                        .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
+                        .putExtra(RecognizerIntent.EXTRA_PROMPT, "Say the command")
+                    runCatching { listen.launch(i) }.onFailure { heard = "Speech input isn't available on this phone" }
+                }) { Text("🎤", style = MaterialTheme.typography.titleLarge) }
+            })
+        // What speech-to-text produced, so a mis-hearing is caught before teaching.
+        heard?.let { Text("Heard: \"$it\"", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             APPS.forEach { (name, pkg) -> FilterChip(app == pkg, { app = pkg }, label = { Text(name) }) }
         }
