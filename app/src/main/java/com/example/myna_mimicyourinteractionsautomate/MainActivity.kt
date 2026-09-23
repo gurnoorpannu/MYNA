@@ -28,10 +28,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.foundation.layout.FlowRow
+import com.example.myna_mimicyourinteractionsautomate.ui.MynaIcons
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
@@ -89,7 +93,9 @@ import java.io.File
 
 class MainActivity : ComponentActivity() {
 
-    private enum class Tab(val label: String, val icon: String) { HOME("Home", "🏠"), TEACH("Teach", "🎓"), HISTORY("History", "🕘") }
+    private enum class Tab(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
+        HOME("Home", MynaIcons.Home), TEACH("Teach", MynaIcons.Teach), HISTORY("History", MynaIcons.History)
+    }
 
     private var tab by mutableStateOf(Tab.HOME)
     private var serviceOn by mutableStateOf(false)
@@ -135,8 +141,9 @@ class MainActivity : ComponentActivity() {
                 NavigationBar(containerColor = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
                     Tab.entries.forEach { t ->
                         NavigationBarItem(selected = tab == t, onClick = { tab = t },
-                            icon = { Text(t.icon, fontSize = 20.sp) }, label = { Text(t.label) },
-                            colors = NavigationBarItemDefaults.colors(indicatorColor = BeakSoft, selectedTextColor = Ink))
+                            icon = { Icon(t.icon, t.label) }, label = { Text(t.label) },
+                            colors = NavigationBarItemDefaults.colors(indicatorColor = Card, selectedIconColor = Ink, selectedTextColor = Ink,
+                                unselectedIconColor = InkSoft, unselectedTextColor = InkSoft))
                     }
                 }
             },
@@ -178,7 +185,7 @@ class MainActivity : ComponentActivity() {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("MYNA", Modifier.weight(1f), fontWeight = FontWeight.Black, fontSize = 26.sp, letterSpacing = 2.sp)
             Box(Modifier.size(40.dp).clip(CircleShape).background(Card).border(1.dp, Line, CircleShape).clickable { settingsOpen = true },
-                contentAlignment = Alignment.Center) { Text("👤", fontSize = 18.sp) }
+                contentAlignment = Alignment.Center) { Icon(MynaIcons.Person, "Settings", Modifier.size(22.dp), tint = Ink) }
         }
         ServiceBanner()
         AskMyna()
@@ -223,8 +230,8 @@ class MainActivity : ComponentActivity() {
                 onTap = { listenNow() })
         }
         chat.takeLast(4).forEach { Bubble(it.substringAfter(": "), mine = it.startsWith("You")) }
-        // Quick answers for MYNA's questions.
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Quick answers for MYNA's questions (they wrap instead of squeezing).
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             (pending as? IntentMatcher.Decision.AskSlot)?.let { q ->
                 Chip("None") { scope.launch { onUserSaid("none") } }
                 q.recipe.slots[q.slot]?.value?.let { last -> Chip("Same ($last)") { scope.launch { onUserSaid("same") } } }
@@ -261,11 +268,11 @@ class MainActivity : ComponentActivity() {
                 res.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { teachUtterance = it; heard = it }
             }
             OutlinedTextField(teachUtterance, { teachUtterance = it }, Modifier.fillMaxWidth(), label = { Text("Command") }, shape = RoundedCornerShape(16.dp),
-                trailingIcon = { IconButton({ runCatching { listen.launch(speechIntent("Say the command")) } }) { Text("🎤", fontSize = 20.sp) } })
+                trailingIcon = { IconButton({ runCatching { listen.launch(speechIntent("Say the command")) } }) { Icon(MynaIcons.Mic, "Speak", tint = Ink) } })
             // What speech-to-text produced, so a mis-hearing is caught before teaching.
             heard?.let { Text("Heard: “$it”", style = MaterialTheme.typography.bodySmall, color = InkSoft) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                APPS.forEach { (name, pkg) -> FilterChip(teachApp == pkg, { teachApp = pkg }, label = { Text(name) }) }
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                APPS.forEach { (name, pkg) -> FilterChip(teachApp == pkg, { teachApp = pkg }, label = { Text(name, maxLines = 1) }) }
             }
             var error by remember { mutableStateOf<String?>(null) }
             Button({
@@ -301,6 +308,10 @@ class MainActivity : ComponentActivity() {
                 AppBadge(r.app)
                 Spacer(Modifier.weight(1f))
                 Text("${r.subtasks.sumOf { s -> s.steps.count { !it.noise } }} steps", style = MaterialTheme.typography.bodySmall, color = InkSoft)
+                // Two taps to delete: a recipe can't be recovered.
+                TextButton({ if (confirmDelete) { Recipes(File(getExternalFilesDir(null), "recipes")).delete(r.id); refresh() } else confirmDelete = true }) {
+                    if (confirmDelete) Text("Sure?") else Icon(MynaIcons.Delete, "Delete", Modifier.size(20.dp), tint = InkSoft)
+                }
             }
             Text(r.summary ?: r.utterance, fontWeight = FontWeight.SemiBold)
             values.forEach { (name, v) ->
@@ -308,15 +319,10 @@ class MainActivity : ComponentActivity() {
                     label = { Text(name.replace('_', ' ')) },
                     supportingText = r.slots[name]?.neighbours?.takeIf { it.isNotEmpty() }?.let { n -> { Text("e.g. " + n.take(3).joinToString()) } })
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Button({ replay(listOf(r), values.mapValues { it.value.value }) }, enabled = serviceOn, shape = RoundedCornerShape(12.dp)) { Text("Run") }
-                OutlinedButton({ save(r.copy(golden = !r.golden)) }, shape = RoundedCornerShape(12.dp)) { Text(if (r.golden) "✓ On Home" else "Add to Home") }
-                TextButton({ openRecipe = r }) { Text("Steps") }
-                Spacer(Modifier.weight(1f))
-                // Two taps to delete: a recipe can't be recovered.
-                TextButton({ if (confirmDelete) { Recipes(File(getExternalFilesDir(null), "recipes")).delete(r.id); refresh() } else confirmDelete = true }) {
-                    Text(if (confirmDelete) "Sure?" else "🗑")
-                }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Button({ replay(listOf(r), values.mapValues { it.value.value }) }, enabled = serviceOn, shape = RoundedCornerShape(12.dp)) { Text("Run", maxLines = 1) }
+                OutlinedButton({ save(r.copy(golden = !r.golden)) }, shape = RoundedCornerShape(12.dp)) { Text(if (r.golden) "✓ On Home" else "Add to Home", maxLines = 1) }
+                TextButton({ openRecipe = r }) { Text("Steps", maxLines = 1) }
             }
         }
     }
@@ -338,7 +344,7 @@ class MainActivity : ComponentActivity() {
                             style = MaterialTheme.typography.bodySmall, color = InkSoft)
                     }
                 }
-                Text("›", fontSize = 24.sp, color = InkSoft)
+                Icon(MynaIcons.Chevron, null, tint = InkSoft)
             }
         }
     }
@@ -396,9 +402,9 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button({ openRecipe = null; replay(listOf(r)) }, enabled = serviceOn, shape = RoundedCornerShape(12.dp)) { Text("Run") }
-                    OutlinedButton({ save(r.copy(golden = !r.golden)) }, shape = RoundedCornerShape(12.dp)) { Text(if (r.golden) "Remove from Home" else "Add to Home") }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Button({ openRecipe = null; replay(listOf(r)) }, enabled = serviceOn, shape = RoundedCornerShape(12.dp)) { Text("Run", maxLines = 1) }
+                    OutlinedButton({ save(r.copy(golden = !r.golden)) }, shape = RoundedCornerShape(12.dp)) { Text(if (r.golden) "Remove from Home" else "Add to Home", maxLines = 1) }
                 }
             }
         }

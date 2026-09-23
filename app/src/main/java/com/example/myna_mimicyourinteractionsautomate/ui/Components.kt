@@ -64,7 +64,7 @@ fun MicHero(busy: Boolean, caption: String, onTap: () -> Unit) {
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.size(84.dp).clip(CircleShape).background(Ink), contentAlignment = Alignment.Center) {
-                Text("🎤", fontSize = 36.sp)
+                androidx.compose.material3.Icon(MynaIcons.Mic, "Speak", Modifier.size(40.dp), tint = Color.White)
             }
             Spacer(Modifier.height(14.dp))
             Text(caption, textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, lineHeight = 22.sp,
@@ -73,7 +73,7 @@ fun MicHero(busy: Boolean, caption: String, onTap: () -> Unit) {
     }
 }
 
-/** A chat line: MYNA on the left in yellow, the user on the right in grey. */
+/** A chat line: MYNA on the left in pale yellow, the user on the right in grey. */
 @Composable
 fun Bubble(text: String, mine: Boolean) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
@@ -86,15 +86,13 @@ fun Bubble(text: String, mine: Boolean) {
 /** App name → a small coloured badge, so Zomato and Amazon cards read at a glance. */
 @Composable
 fun AppBadge(pkg: String) {
-    val (name, color) = when {
-        "zomato" in pkg -> "Zomato" to Color(0xFFE23744)
-        "amazon" in pkg -> "Amazon" to Color(0xFFFF9900)
-        "myntra" in pkg -> "Myntra" to Color(0xFFFF3F6C)
-        "swiggy" in pkg -> "Swiggy" to Color(0xFFFC8019)
-        else -> pkg.substringAfterLast('.').replaceFirstChar { it.uppercase() } to InkSoft
+    val name = when {
+        "zomato" in pkg -> "Zomato"; "amazon" in pkg -> "Amazon"; "myntra" in pkg -> "Myntra"; "swiggy" in pkg -> "Swiggy"
+        else -> pkg.substringAfterLast('.').replaceFirstChar { it.uppercase() }
     }
-    Text(name, Modifier.clip(RoundedCornerShape(8.dp)).background(color.copy(alpha = 0.12f)).padding(horizontal = 8.dp, vertical = 3.dp),
-        color = color, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+    // Monochrome on purpose: the design is black and white.
+    Text(name, Modifier.clip(RoundedCornerShape(8.dp)).background(Color.White).border(1.dp, Line, RoundedCornerShape(8.dp))
+        .padding(horizontal = 8.dp, vertical = 3.dp), color = Ink, fontSize = 12.sp, fontWeight = FontWeight.Bold)
 }
 
 /** One pinned automation in the Home grid. */
@@ -105,9 +103,11 @@ fun AutomationCard(title: String, pkg: String, enabled: Boolean, onRun: () -> Un
         AppBadge(pkg)
         Text(title, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 20.sp, maxLines = 3, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.height(62.dp))
+        // Half-screen cards: compact buttons that share the row (full-size ones squash "Steps" into a column).
+        val compact = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 6.dp)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Button(onRun, enabled = enabled, shape = RoundedCornerShape(12.dp), contentPadding = ButtonDefaults.ContentPadding) { Text("Run") }
-            OutlinedButton(onSteps, shape = RoundedCornerShape(12.dp)) { Text("Steps") }
+            Button(onRun, Modifier.weight(1f), enabled = enabled, shape = RoundedCornerShape(12.dp), contentPadding = compact) { Text("Run", maxLines = 1) }
+            OutlinedButton(onSteps, Modifier.weight(1f), shape = RoundedCornerShape(12.dp), contentPadding = compact) { Text("Steps", maxLines = 1) }
         }
     }
 }
