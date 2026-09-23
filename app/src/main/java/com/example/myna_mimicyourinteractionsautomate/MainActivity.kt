@@ -37,6 +37,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.myna_mimicyourinteractionsautomate.a11y.MynaService
 import com.example.myna_mimicyourinteractionsautomate.llm.Llm
+import com.example.myna_mimicyourinteractionsautomate.intent.IntentMatcher
+import com.example.myna_mimicyourinteractionsautomate.replay.Slots
+import androidx.compose.runtime.mutableStateListOf
 import com.example.myna_mimicyourinteractionsautomate.recipe.RecipeJson
 import com.example.myna_mimicyourinteractionsautomate.recipe.Recipe
 import com.example.myna_mimicyourinteractionsautomate.recipe.Recipes
@@ -54,6 +57,13 @@ class MainActivity : ComponentActivity() {
     private var lastRecording by mutableStateOf<Recording?>(null)
     private var recipes by mutableStateOf<List<Recipe>>(emptyList())
     private var lastRun by mutableStateOf<RunLog?>(null)
+    private var teachUtterance by mutableStateOf("Order a Margherita pizza from Domino's on Zomato")
+    private var teachApp by mutableStateOf(APPS[0].second)
+
+    // --- Ask MYNA (Phase 5): conversation state ---
+    private val chat = mutableStateListOf<String>()
+    private var pending by mutableStateOf<IntentMatcher.Decision?>(null)
+    private var thinking by mutableStateOf(false)
 
     private companion object {
         val PING_SCHEMA = JSONObject("""{"type":"object","required":["reply"],"properties":{"reply":{"type":"string"}}}""")
@@ -75,6 +85,8 @@ class MainActivity : ComponentActivity() {
                             Text("Open accessibility settings")
                         }
 
+                        AskCard()
+                        HorizontalDivider()
                         TeachCard()
                         lastRecording?.let { RecordingCard(it) }
                         HorizontalDivider()
@@ -98,15 +110,125 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Ask MYNA: say or type a command; MYNA picks the recipe, fills blanks, asks when unsure (T3, T12, T13). */
+    @Composable
+    private fun AskCard() {
+        val scope = rememberCoroutineScope()
+        var input by remember { mutableStateOf("") }
+        val listen = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+            res.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { heard ->
+                input = heard
+                scope.launch { onUserSaid(heard) }
+            }
+        }
+        Text("Ask MYNA", style = MaterialTheme.typography.titleMedium)
+        chat.takeLast(6).forEach { Text(it, style = MaterialTheme.typography.bodySmall,
+            color = if (it.startsWith("MYNA")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface) }
+        if (thinking) Text("…thinking", style = MaterialTheme.typography.bodySmall)
+        OutlinedTextField(input, { input = it }, Modifier.fillMaxWidth(),
+            label = { Text(if (pending != null) "Your answer" else "Say or type a command") },
+            trailingIcon = { IconButton(onClick = { runCatching { listen.launch(speechIntent(if (pending != null) "Your answer" else "What should I do?")) } }) {
+                Text("🎤", style = MaterialTheme.typography.titleLarge) } })
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(enabled = input.isNotBlank() && !thinking, onClick = { val t = input; scope.launch { onUserSaid(t) } }) { Text(if (pending != null) "Answer" else "Go") }
+            if (pending is IntentMatcher.Decision.DidYouMean || pending is IntentMatcher.Decision.Unknown ||
+                (pending as? IntentMatcher.Decision.Run)?.confirm != null) {
+                Button(onClick = { scope.launch { onUserSaid("yes") } }) { Text("Yes") }
+                Button(onClick = { scope.launch { onUserSaid("no") } }) { Text("No") }
+            }
+        }
+    }
+
+    private fun speechIntent(prompt: String) = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+        .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
+        .putExtra(RecognizerIntent.EXTRA_PROMPT, prompt)
+
+    private fun myna(text: String) {
+        chat += "MYNA: $text"
+        MynaService.instance?.say(text)
+    }
+
+    private val YES = Regex("^(yes|yeah|yep|haan|ha|sure|ok|okay|go ahead|do it|correct|right|same|same as last time|like last time)\\b", RegexOption.IGNORE_CASE)
+    private val NO = Regex("^(no|nope|nah|nahi|cancel|stop|wrong)\\b", RegexOption.IGNORE_CASE)
+
+    /** One turn of the conversation: a new command, or an answer to MYNA's question. */
+    private suspend fun onUserSaid(text: String) {
+        chat += "You: $text"
+        val p = pending
+        pending = null
+        when {
+            p is IntentMatcher.Decision.AskSlot -> {
+                // "same" / "yes" → keep last time's value; "none" / "skip" → leave it out.
+                val v = when {
+                    YES.containsMatchIn(text) -> p.values[p.slot].orEmpty()
+                    Regex("^(none|nothing|skip|no|leave it)\\b", RegexOption.IGNORE_CASE).containsMatchIn(text) -> ""
+                    else -> text.trim()
+                }
+                val values = p.values + (p.slot to v)
+                if (p.rest.isNotEmpty()) handle(IntentMatcher.ask(p.recipe, values, p.rest)) else run(p.recipe, values)
+            }
+            p is IntentMatcher.Decision.DidYouMean -> if (YES.containsMatchIn(text)) run(p.recipe, p.values)
+                else myna("Okay. Tell me again, or teach me how.")
+            p is IntentMatcher.Decision.Run && p.confirm != null -> if (YES.containsMatchIn(text)) run(p.recipe, p.values)
+                else myna("Okay, I won't. What should I change?")
+            p is IntentMatcher.Decision.Unknown -> if (YES.containsMatchIn(text)) {
+                teachUtterance = p.utterance
+                APPS.firstOrNull { (name, _) -> p.utterance.contains(name, ignoreCase = true) }?.let { teachApp = it.second }
+                myna("Great. Pick the app below, tap Teach, and show me once.")
+            } else myna("No problem.")
+            NO.matches(text.trim()) -> myna("Okay.")
+            else -> command(text)
+        }
+    }
+
+    private suspend fun command(text: String) {
+        val list = Recipes(File(getExternalFilesDir(null), "recipes")).all()
+        thinking = true
+        val d = runCatching { IntentMatcher.decide(text, list) }.getOrElse { myna("Sorry, I couldn't understand that (${it.message})."); thinking = false; return }
+        thinking = false
+        handle(d)
+    }
+
+    private fun handle(d: IntentMatcher.Decision) {
+        when (d) {
+            IntentMatcher.Decision.Report -> myna(lastRunReport())
+            is IntentMatcher.Decision.Unknown -> { pending = d; myna("I haven't learned that yet. Want to teach me?") }
+            is IntentMatcher.Decision.DidYouMean -> { pending = d; myna(d.question) }
+            is IntentMatcher.Decision.AskSlot -> { pending = d; myna(d.question) }
+            is IntentMatcher.Decision.Run -> if (d.confirm != null) { pending = d; myna(d.confirm) } else run(d.recipe, d.values)
+        }
+    }
+
+    private fun run(r: Recipe, values: Map<String, String>) {
+        myna("On it: " + Slots.fill(r.summary ?: r.utterance, values))
+        replay(listOf(r), values)
+    }
+
+    /** T14 preview: "Did it work?" answered from the last run log. */
+    private fun lastRunReport(): String {
+        val log = lastRun ?: return "I haven't run anything yet."
+        val what = log.utterance
+        return when (log.outcome) {
+            com.example.myna_mimicyourinteractionsautomate.replay.Outcome.HANDED_OFF -> "Yes. For \"$what\" I reached the payment step and handed it to you."
+            com.example.myna_mimicyourinteractionsautomate.replay.Outcome.DONE -> "Yes, \"$what\" finished."
+            com.example.myna_mimicyourinteractionsautomate.replay.Outcome.STOPPED -> "You stopped it at step ${log.steps.size}."
+            else -> {
+                val s = log.steps.lastOrNull { it.status != "ok" } ?: log.steps.lastOrNull()
+                "No. It stopped at step ${s?.index}, ${s?.what}, because ${log.reason}."
+            }
+        }
+    }
+
     @Composable
     private fun TeachCard() {
         Text("Teach", style = MaterialTheme.typography.titleMedium)
-        var utterance by remember { mutableStateOf("Order a Margherita pizza from Domino's on Zomato") }
+        var utterance by ::teachUtterance
         var heard by remember { mutableStateOf<String?>(null) }
         val listen = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
             res.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { utterance = it; heard = it }
         }
-        var app by remember { mutableStateOf(APPS[0].second) }
+        var app by ::teachApp
         var error by remember { mutableStateOf<String?>(null) }
         OutlinedTextField(utterance, { utterance = it }, Modifier.fillMaxWidth(), label = { Text("Command") },
             trailingIcon = {
