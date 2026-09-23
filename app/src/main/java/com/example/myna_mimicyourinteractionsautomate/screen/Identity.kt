@@ -192,6 +192,9 @@ object Identity {
             prev.walk().firstOrNull { it.visible && it.clickable && (it.label ?: primaryText(it))?.let(ADD_BTN::containsMatchIn) == true }?.let { return it }
         }
         val before = prev.walk().filter { it.visible }.mapNotNull { it.label?.let(::norm) }.toSet()
+        val after = next.walk().filter { it.visible }.mapNotNull { it.label?.let(::norm) }.toSet()
+        // Only a real page change counts (≥ half the old text gone); more results loading into a list is not a tap.
+        if (before.isEmpty() || before.count { it !in after } * 2 < before.size) return null
         val fresh = next.walk().filter { it.visible && !it.editable }.mapNotNull { it.label?.let(::norm) }.filter { it !in before }.map(::stems).toList()
         if (fresh.isEmpty()) return null
         val scored = prev.walk().filter { it.visible && it.clickable && !it.editable }.mapNotNull { n ->

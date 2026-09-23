@@ -146,11 +146,13 @@ object Compiler {
      * A tap right after a submitted search is "open the result that matches the search", not "tap this exact
      * product": with {product} = laptop stand the demo's phone case won't be in the results (T9).
      */
-    fun resultPicks(steps: List<Step>): List<Step> = steps.mapIndexed { i, s ->
+    fun resultPicks(steps: List<Step>, original: List<Step> = steps): List<Step> = steps.mapIndexed { i, s ->
         val before = steps.subList(0, i).lastOrNull { !it.noise }
         val afterSearch = before != null && ((before.type == StepType.TYPE && before.submit) ||
             (before.goal == "search" && before.args["pick"] == null))
-        if (s.type == StepType.TAP && !s.noise && afterSearch && before!!.text != null)
+        val t0 = original[i].target   // before blanks rewrote the label
+        val looksLikeResult = (t0?.label ?: t0?.key?.value).orEmpty().length >= 12   // a title, not the "Cart" tab
+        if (s.type == StepType.TAP && !s.noise && afterSearch && looksLikeResult && before!!.text != null)
             Step(StepType.GOAL, goal = "pick_result", args = mapOf("query" to before.text!!), target = s.target, screen = s.screen,
                 why = "open the result that best matches the search")
         else s
@@ -208,7 +210,7 @@ object Compiler {
             taken += b.name
         }
 
-        val out = resultPicks(applyBlanks(steps, blanks)).toMutableList()
+        val out = resultPicks(applyBlanks(steps, blanks), steps).toMutableList()
         ai?.optJSONArray("steps")?.forEachObj { o ->
             val i = o.optInt("i", -1)
             if (i in out.indices) out[i] = out[i].copy(why = o.optString("why"),

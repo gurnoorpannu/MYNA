@@ -348,6 +348,12 @@ class DiffInferenceTest {
         assertEquals("Add to cart", Identity.inferByDiff(before, after)?.label)
     }
 
+    @Test fun moreResultsLoadingIsNotATap() {
+        val more = UiNode(children = results.children.map { UiNode(text = it.text, clickable = true, t = it.t, b = it.b) } +
+            link("Go to detail page for \"Spigen Rugged Armor Case for Galaxy S25 Ultra\"", 1500))
+        assertEquals(null, Identity.inferByDiff(results, more))
+    }
+
     @Test fun nothingNewNothingGuessed() {
         assertEquals(null, Identity.inferByDiff(product, product))
     }

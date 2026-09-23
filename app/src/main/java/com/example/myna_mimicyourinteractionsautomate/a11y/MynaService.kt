@@ -69,6 +69,7 @@ class MynaService : AccessibilityService(), Device {
     companion object {
         const val TAG = "Myna"
         const val SETTLE_MS = 600L
+        const val TICK_MS = 1_500L
         private val NOISY_EVENTS = setOf(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED, AccessibilityEvent.TYPE_VIEW_SCROLLED,
             AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED, AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED)     // no UI change for this long = screen settled (recorder + replay)
         @Volatile var instance: MynaService? = null
@@ -89,6 +90,20 @@ class MynaService : AccessibilityService(), Device {
     private var lastPkg: String? = null
     private var lastChangeAt = 0L
     private val settled = Runnable { onSettled() }
+
+    /** Pages with carousels/video (Amazon, Zomato) never go still: while teaching, also look every 1.5 s. */
+    private val tick = object : Runnable {
+        override fun run() {
+            if (recorder == null) return
+            if (System.currentTimeMillis() - lastChangeAt >= TICK_MS) onSettled()   // nothing moved since: already covered
+            else captureFront()?.let { (root, _) ->
+                val sig = root.walk().mapNotNull { it.label }.toSet().hashCode()
+                if (sig != lastTickSig) { lastTickSig = sig; onSettled() }
+            }
+            main.postDelayed(this, TICK_MS)
+        }
+    }
+    private var lastTickSig = 0
 
     private val launcherPkg by lazy {
         packageManager.resolveActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0)
@@ -338,6 +353,7 @@ class MynaService : AccessibilityService(), Device {
             startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
         }, 500)
         showOverlay()
+        main.removeCallbacks(tick); main.postDelayed(tick, TICK_MS)
         Toast.makeText(this, "Your turn: do the task yourself. Tap ■ Done when finished.", Toast.LENGTH_LONG).show()
         return true
     }
