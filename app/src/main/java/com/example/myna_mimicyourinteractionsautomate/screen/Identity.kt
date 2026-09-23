@@ -104,11 +104,14 @@ object Identity {
      */
     fun inferTap(prev: UiNode, next: UiNode): UiNode? {
         val nextTexts = next.walk().filter { it.visible }.mapNotNull { it.label?.let(::norm) }.toSet()
+        // Same text at the same place on both screens = persistent chrome (Zomato's cart bar), not what was tapped.
+        val persistent = next.walk().filter { it.visible && it.label != null }.map { norm(it.label!!) to it.bounds }.toSet()
         val prevTexts = prev.walk().filter { it.visible }.mapNotNull { it.label?.let(::norm) }.toSet()
         // Only rows of a scrollable list (suggestions, results): chrome like "Back" lives on both screens.
         val hits = prev.walk().filter { it.visible && it.clickable && !it.editable && listItem(it) != null }
             .mapNotNull { n -> primaryText(n)?.let(::norm)?.let { t -> n to t } }
-            .filter { (_, t) -> t.length >= 3 && t in nextTexts }
+            .filter { (n, t) -> t.length >= 3 && t in nextTexts }
+            .filter { (n, _) -> n.walk().none { c -> c.label != null && (norm(c.label!!) to c.bounds) in persistent } }
             .toList()
         // A text repeated across many rows ("Restaurant") proves nothing; keep ones specific to one row.
         val specific = hits.filter { (_, t) -> prev.walk().count { it.visible && it.label?.let(::norm) == t } <= 2 }

@@ -114,7 +114,7 @@ class MynaService : AccessibilityService() {
                 e.source?.let { onClick(pkg, it) }
                 if (dumping) dumpScreen("click", JSONObject().put("text", e.text.joinToString(" ")).put("id", e.source?.viewIdResourceName))
             }
-            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> e.source?.let { onTextChanged(pkg, it) }
+            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> e.source?.let { onTextChanged(pkg, it, e.text.joinToString("")) }
         }
         lastPkg = pkg
     }
@@ -151,15 +151,18 @@ class MynaService : AccessibilityService() {
         updateOverlay()
     }
 
-    private fun onTextChanged(pkg: String, src: AccessibilityNodeInfo) {
+    /** [eventText] = the event's own copy of the new text; Zomato's field value stays the placeholder while typing. */
+    private fun onTextChanged(pkg: String, src: AccessibilityNodeInfo, eventText: String) {
+        Log.d(TAG, "text event=\"$eventText\" node=\"${src.text}\" hintShowing=${src.isShowingHintText}")
         val rec = recorder ?: return
         val (root, node) = snapshotAround(src) ?: return
         // Never record what goes into an OTP/password/card field.
         SafetyGate.checkTap(node, root, pkg)?.let { return stopRecording(it) }
         if (src.isPassword) return
-        val raw = src.text?.toString().orEmpty()
-        val text = if (src.isShowingHintText || Identity.isPlaceholder(node, raw)) "" else raw
-        Log.d(TAG, "text raw=\"$raw\" kept=\"$text\"")
+        val text = listOf(eventText, src.text?.toString().orEmpty())
+            .firstOrNull { it.isNotBlank() && !Identity.isPlaceholder(node, it) }
+            ?.takeUnless { src.isShowingHintText && it == src.text?.toString() }
+            .orEmpty()
         rec.onText(Identity.target(node, root, rec.spoken), text, screenOf(root, pkg))
         updateOverlay()
     }

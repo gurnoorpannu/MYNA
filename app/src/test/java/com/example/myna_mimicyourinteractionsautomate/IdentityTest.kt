@@ -126,7 +126,7 @@ class InferTapTest {
             row("Domino's Pizza", "Restaurant · 7.6 km"), row("Dominos pizza near me", "Search"), row("Shawarmajaan", "Restaurant")))))
     private val menu = UiNode(cls = "FrameLayout", children = listOf(
         UiNode(text = "Back", cls = "ImageButton", clickable = true),
-        UiNode(text = "Domino's Pizza", cls = "TextView"), UiNode(text = "Margherita Pizza", cls = "TextView")))
+        UiNode(text = "Domino's Pizza", cls = "TextView", t = 200, b = 260), UiNode(text = "Margherita Pizza", cls = "TextView", t = 900, b = 960)))
 
     @Test fun picksTheRowWhoseTitleIsOnTheNextScreen() {
         val tapped = Identity.inferTap(suggestions, menu)
@@ -161,5 +161,15 @@ class PlaceholderTest {
             UiNode(id = "vsearch_parent", children = listOf(field))))
         assertTrue(Identity.isPlaceholder(field, "Type to search restaurants or dishes"))
         assertEquals(false, Identity.isPlaceholder(field, "Domino's"))
+    }
+}
+
+class PersistentChromeTest {
+    @Test fun cartBarOnBothScreensIsNotGuessed() {
+        fun cartBar() = UiNode(cls = "RecyclerView", scrollable = true, children = listOf(
+            UiNode(cls = "ViewGroup", clickable = true, children = listOf(UiNode(text = "Domino's Pizza", t = 2000, b = 2050), UiNode(text = "View Menu", t = 2060, b = 2100)))))
+        val home = UiNode(children = listOf(cartBar(), UiNode(text = "Search", clickable = true)))
+        val suggestions = UiNode(children = listOf(cartBar(), UiNode(text = "Type to search", editable = true)))
+        assertEquals(null, Identity.inferTap(home, suggestions))
     }
 }
