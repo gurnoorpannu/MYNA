@@ -102,7 +102,8 @@ class MynaService : AccessibilityService(), Device {
     private var awaitingApp: String? = null      // set during clean start
     private var prevSettled: Pair<UiNode, Screen>? = null
     private var stepsAtPrevSettle = 0
-    private val sheetChoices = linkedSetOf<String>()   // options seen selected while the current sheet was open (user may scroll)
+    private val sheetChoices = linkedSetOf<String>()
+    private var typingWithKeyboard = false             // a text event arrived while recording; keyboard was up   // options seen selected while the current sheet was open (user may scroll)
     private val activityOf = mutableMapOf<String, String>()
     private var overlay: Button? = null
     private var handOffView: TextView? = null
@@ -156,7 +157,10 @@ class MynaService : AccessibilityService(), Device {
     }
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
-        if (event.action == KeyEvent.ACTION_UP && event.keyCode == KeyEvent.KEYCODE_BACK) recorder?.onKey(SystemKey.BACK)
+        if (event.action == KeyEvent.ACTION_UP && event.keyCode == KeyEvent.KEYCODE_BACK) {
+            typingWithKeyboard = false   // Back closed the keyboard: not a submit
+            recorder?.onKey(SystemKey.BACK)
+        }
         updateOverlay()
         return false   // never swallow keys
     }
@@ -200,6 +204,7 @@ class MynaService : AccessibilityService(), Device {
         SafetyGate.checkTap(node, root, pkg)?.let { return stopRecording(it) }
         if (src.isPassword) return
         inferMissedTap(rec, root, pkg)
+        typingWithKeyboard = true
         val text = listOf(eventText, src.text?.toString().orEmpty())
             .firstOrNull { it.isNotBlank() && !Identity.isPlaceholder(node, it) }
             ?.takeUnless { src.isShowingHintText && it == src.text?.toString() }
@@ -219,6 +224,7 @@ class MynaService : AccessibilityService(), Device {
         val rec = recorder ?: return
         val (root, pkg) = captureFront() ?: return
         if (pkg == packageName || pkg == launcherPkg || pkg in IGNORED_PACKAGES) return
+        detectSubmit(rec)
         if (Identity.isModal(root)) sheetChoices += Identity.selectedOptions(root) else sheetChoices.clear()
         val screen = inferMissedTap(rec, root, pkg)
         rec.onScreen(screen, Identity.compact(root))
@@ -230,6 +236,18 @@ class MynaService : AccessibilityService(), Device {
      * New activity but no step since the last settled screen → the app ate the click event (Zomato suggestions).
      * Runs on settle AND right before recording the next tap/typing: pages with autoplay video never settle.
      */
+    /**
+     * Keyboard gone after typing, and the user didn't press Back: they pressed Go/Search/Enter
+     * (the key itself is never reported to accessibility services).
+     */
+    private fun detectSubmit(rec: Recorder) {
+        if (!typingWithKeyboard) return
+        val keyboardUp = windows.any { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+        if (keyboardUp) return
+        typingWithKeyboard = false
+        if (rec.steps.lastOrNull()?.type == com.example.myna_mimicyourinteractionsautomate.recipe.StepType.TYPE) rec.markSubmit()
+    }
+
     private fun inferMissedTap(rec: Recorder, root: UiNode, pkg: String): Screen {
         val screen = screenOf(root, pkg)
         val prev = prevSettled
@@ -500,7 +518,11 @@ class MynaService : AccessibilityService(), Device {
     }
 
     override suspend fun ocr(): List<OcrLine> {
-        val bmp = screenshot() ?: return emptyList()
+        // Our own overlays ("► 3/3 TAP CART", banners) must not be read as the app's screen.
+        val mine = listOfNotNull(runOverlay, promptView, handOffView, overlay)
+        mine.forEach { it.visibility = android.view.View.INVISIBLE }
+        delay(120)
+        val bmp = try { screenshot() } finally { mine.forEach { it.visibility = android.view.View.VISIBLE } } ?: return emptyList()
         return suspendCancellableCoroutine { cont ->
             TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS).process(InputImage.fromBitmap(bmp, 0))
                 .addOnSuccessListener { text ->

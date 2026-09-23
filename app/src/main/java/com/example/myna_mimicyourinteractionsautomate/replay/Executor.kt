@@ -87,7 +87,9 @@ class Executor(
         var checkoutTaps = 0
         if (recipe.end == End.PAYMENT_SCREEN) for (i in 0 until 6) {
             if (SafetyGate.check(root, pkg) != null) break
-            val close = Finder.closeButton(root, anywhere = true) ?: if (i > 0) ocrClose(root) else null
+            // ✕ icons / OCR "×" only while a pop-up is up: on a plain cart page they'd be delete buttons.
+            val popup = Identity.isModal(root)
+            val close = Finder.closeButton(root, anywhere = popup) ?: if (i > 0 && popup) ocrClose(root) else null
             val next = root.walk().firstOrNull { n -> n.visible && n.clickable && n.walk().any { c -> c.label?.let(CHECKOUT::containsMatchIn) == true } }
             when {
                 close != null -> {

@@ -112,7 +112,8 @@ object Finder {
             n.id?.let { Regex("close|dismiss", RegexOption.IGNORE_CASE).containsMatchIn(it) } == true)
     } ?: closeIcon(root, anywhere)
 
-    private val NOT_CLOSE = Regex("share|collection|bookmark|fav|wish|cart|search|menu|back|more|profile|filter|sort|info|help|edit|mic|voice|scan|camera",
+    private val NOT_CLOSE = Regex("share|collection|bookmark|fav|wish|cart|search|menu|back|more|profile|filter|sort|info|help|edit|mic|voice|scan|camera|" +
+        "delete|remove|trash|bin|qty|quantity|minus|plus|add|stepper",
         RegexOption.IGNORE_CASE)
 
     /**

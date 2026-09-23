@@ -62,7 +62,8 @@ object Compiler {
 
     fun findBlanks(rec: Recording): List<Blank> {
         val w = words(rec.utterance)
-        val appWords = setOf(loose(rec.app.substringAfterLast('.')))
+        // "Amazon" in in.amazon.mShop.android.shopping is the app, not a blank.
+        val appWords = rec.app.split('.').map(::loose).filter { it.length >= 3 && it != "android" && it != "com" }.toSet()
         val hits = mutableListOf<Hit>()
         fun hit(step: Int, where: Where, value: String?) {
             value ?: return
