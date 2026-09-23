@@ -37,6 +37,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.IconButton
 import androidx.compose.foundation.layout.FlowRow
 import com.example.myna_mimicyourinteractionsautomate.ui.MynaIcons
+import com.example.myna_mimicyourinteractionsautomate.ui.VoiceInput
+import com.example.myna_mimicyourinteractionsautomate.intent.SpeechFix
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
@@ -117,6 +119,29 @@ class MainActivity : ComponentActivity() {
     private var pending by mutableStateOf<IntentMatcher.Decision?>(null)
     private var thinking by mutableStateOf(false)
     private var listening by mutableStateOf(false)   // speech input open: the mic circle turns green
+    private var liveWords by mutableStateOf("")       // what the recogniser hears so far, shown in the circle
+    private val voice by lazy { VoiceInput(this) }
+
+    /** Words the recogniser should expect (dish names, restaurants, products) — fewer mis-hearings. */
+    private fun hints() = SpeechFix.vocabulary(recipes).toList()
+
+    /** Listen in-app (no Google popup). Asks for the mic permission the first time. */
+    private var afterMicGrant: (() -> Unit)? = null
+    private val micPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) afterMicGrant?.invoke() else myna("I need the microphone to hear you. You can still type.")
+        afterMicGrant = null
+    }
+
+    private fun listen(onHeard: (String) -> Unit) {
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            afterMicGrant = { listen(onHeard) }; micPermission.launch(android.Manifest.permission.RECORD_AUDIO); return
+        }
+        listening = true; liveWords = ""
+        voice.start(hints(), onPartial = { liveWords = it }) { heard ->
+            listening = false; liveWords = ""
+            heard?.let(onHeard)
+        }
+    }
 
     private companion object {
         val PING_SCHEMA = JSONObject("""{"type":"object","required":["reply"],"properties":{"reply":{"type":"string"}}}""")
@@ -221,13 +246,14 @@ class MainActivity : ComponentActivity() {
     private fun AskMyna() {
         val scope = rememberCoroutineScope()
         var input by remember { mutableStateOf("") }
-        val listen = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
-            listening = false
-            res.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { heard -> input = ""; scope.launch { onUserSaid(heard) } }
-        }
         val listenNow = {
-            listening = true
-            runCatching { listen.launch(speechIntent(if (pending != null) "Your answer" else "What should I do?")) }.onFailure { listening = false }
+            if (listening) { voice.stop(); listening = false }   // tap again to stop
+            else listen { heard ->
+                input = ""
+                // Fix mis-hearings against known words ("marherator" → "Margherita"), and say so.
+                val fixed = SpeechFix.fix(heard, SpeechFix.vocabulary(recipes))
+                scope.launch { onUserSaid(fixed.text, fixed.changes) }
+            }
         }
         // When MYNA asks something, listen for the reply once it has finished speaking.
         val asking = pending
@@ -235,7 +261,8 @@ class MainActivity : ComponentActivity() {
 
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             MicHero(busy = thinking || pending != null, listening = listening,
-                caption = when { listening -> "Listening…"; thinking -> "Thinking…"; pending != null -> "Tap to answer"; else -> "What do you want to do with MYNA today?" },
+                caption = when { listening -> liveWords.ifBlank { "Listening…" }; thinking -> "Thinking…"; pending != null -> "Tap to answer"
+                    else -> "What do you want to do with MYNA today?" },
                 onTap = { listenNow() })
         }
         chat.takeLast(4).forEach { Bubble(it.substringAfter(": "), mine = it.startsWith("You")) }
@@ -273,11 +300,11 @@ class MainActivity : ComponentActivity() {
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Card).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Say what you want, then show MYNA once.", color = InkSoft)
             var heard by remember { mutableStateOf<String?>(null) }
-            val listen = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
-                res.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { teachUtterance = it; heard = it }
-            }
             OutlinedTextField(teachUtterance, { teachUtterance = it }, Modifier.fillMaxWidth(), label = { Text("Command") }, shape = RoundedCornerShape(16.dp),
-                trailingIcon = { IconButton({ runCatching { listen.launch(speechIntent("Say the command")) } }) { Icon(painterResource(R.drawable.mic), "Speak", Modifier.size(22.dp), tint = Ink) } })
+                trailingIcon = { IconButton({ listen { teachUtterance = it; heard = it } }) {
+                    Icon(painterResource(R.drawable.mic), "Speak", Modifier.size(22.dp), tint = if (listening) com.example.myna_mimicyourinteractionsautomate.ui.theme.Ok else Ink)
+                } })
+            if (listening && liveWords.isNotBlank()) Text("…$liveWords", style = MaterialTheme.typography.bodySmall, color = InkSoft)
             // What speech-to-text produced, so a mis-hearing is caught before teaching.
             heard?.let { Text("Heard: “$it”", style = MaterialTheme.typography.bodySmall, color = InkSoft) }
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -496,11 +523,6 @@ class MainActivity : ComponentActivity() {
 
     // ================================================================= assistant logic (unchanged behaviour)
 
-    private fun speechIntent(prompt: String) = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-        .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-        .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
-        .putExtra(RecognizerIntent.EXTRA_PROMPT, prompt)
-
     private fun myna(text: String) {
         chat += "MYNA: $text"
         MynaService.instance?.say(text)
@@ -510,8 +532,9 @@ class MainActivity : ComponentActivity() {
     private val NO = Regex("^(no|nope|nah|nahi|cancel|stop|wrong)\\b", RegexOption.IGNORE_CASE)
 
     /** One turn of the conversation: a new command, or an answer to MYNA's question. */
-    private suspend fun onUserSaid(text: String) {
+    private suspend fun onUserSaid(text: String, fixes: List<Pair<String, String>> = emptyList()) {
         chat += "You: $text"
+        if (fixes.isNotEmpty()) chat += "MYNA: (heard " + fixes.joinToString { "“${it.first}” → “${it.second}”" } + ")"
         val p = pending
         pending = null
         when {
