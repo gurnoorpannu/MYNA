@@ -192,3 +192,34 @@ class SearchedCardTest {
         assertEquals("Continue", t.key!!.value)
     }
 }
+
+/** Zomato's restaurant page is ONE big ScrollView: its children are sections, not cards. */
+class WholePageScrollTest {
+    private fun card(dish: String, top: Int) = UiNode(cls = "FrameLayout", t = top, b = top + 300, children = listOf(
+        UiNode(text = dish, t = top + 10, b = top + 60), UiNode(text = "", id = "button_add", clickable = true, t = top + 200, b = top + 250)))
+    private val search = UiNode(text = "Search in Domino's Pizza", id = "edittext", editable = true, clickable = true, t = 300, b = 400)
+    private val searchBtn = UiNode(id = "button1", clickable = true, t = 200, b = 280, children = listOf(UiNode(text = "Search", t = 210, b = 270)))
+    private val page = UiNode(cls = "FrameLayout", t = 0, b = 2400, children = listOf(
+        UiNode(cls = "ScrollView", scrollable = true, t = 0, b = 2400, children = listOf(
+            UiNode(desc = "Domino's Pizza", id = "title", t = 100, b = 160), searchBtn, search,
+            UiNode(cls = "LinearLayout", t = 500, b = 2400, children = listOf(
+                UiNode(cls = "RecyclerView", scrollable = true, t = 500, b = 2400, children = listOf(
+                    card("Margherita Pizza", 500), card("Farmhouse Pizza", 900)))))))))
+    private val spoken = setOf("order", "margherita", "pizza", "domino")
+
+    @Test fun pageWidgetsKeepTheirOwnKeys() {
+        assertEquals(KeyKind.ID, Identity.target(search, page, spoken).key!!.by)
+        assertEquals(KeyKind.ID, Identity.target(searchBtn, page, spoken).key!!.by)   // not near "Domino's Pizza"
+    }
+
+    @Test fun addStillAnchorsOnItsSmallCard() {
+        val add = page.walk().first { it.id == "button_add" }
+        val k = Identity.target(add, page, spoken).key!!
+        assertEquals(KeyKind.NEAR_TEXT, k.by); assertEquals("Margherita Pizza", k.value)
+    }
+
+    @Test fun clearTextCrossIsNotAPopupClose() {
+        val bar = UiNode(children = listOf(UiNode(desc = "Double tap to clear text", id = "iconCross", clickable = true)))
+        assertEquals(null, com.example.myna_mimicyourinteractionsautomate.replay.Finder.closeButton(bar))
+    }
+}

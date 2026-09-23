@@ -91,7 +91,8 @@ object Finder {
 
     fun closeButton(root: UiNode): UiNode? = visible(root).firstOrNull { n ->
         n.clickable && (n.label?.let { CLOSE.matches(it) } == true ||
-            n.id?.let { Regex("close|dismiss|cross|cancel", RegexOption.IGNORE_CASE).containsMatchIn(it) } == true)
+            // Not "cross"/"cancel" ids: Zomato's iconCross clears the search text.
+            n.id?.let { Regex("close|dismiss", RegexOption.IGNORE_CASE).containsMatchIn(it) } == true)
     }
 
     fun similarity(a: String, b: String): Double {

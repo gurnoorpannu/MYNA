@@ -17,7 +17,7 @@ object Identity {
         val label = if (n.editable) (n.hint ?: n.desc)?.takeIf { it.isNotBlank() } else n.label
         val subTexts = n.walk().drop(1).mapNotNull { it.label }.filter { it != label }.distinct().take(6).toList()
         val anchor = anchor(n)
-        val nearby = anchor.walk().filter { it !in n.walk() }.mapNotNull { it.label }.distinct().take(6).toList()
+        val nearby = anchor.walk().filter { it !in n.walk() && !it.editable }.mapNotNull { it.label }.distinct().take(6).toList()
         return Target(
             label = label,
             subTexts = subTexts,
@@ -39,14 +39,14 @@ object Identity {
         // A card may repeat its own title (image desc + text): unique = appears nowhere outside the card.
         val inAnchor = anchor.walk().toSet()
         val onlyInAnchor = { s: String -> visible.none { it !in inAnchor && it.label?.let(::norm) == norm(s) } }
-        val nearby = anchor.walk().filter { it !in n.walk() }.mapNotNull { it.label }.distinct()
+        val nearby = anchor.walk().filter { it !in n.walk() && !it.editable }.mapNotNull { it.label }.distinct()
             .filter { isStable(it) && onlyInAnchor(it) }
             .sortedByDescending { t -> spoken.any { w -> t.contains(w, ignoreCase = true) } }
         val spokenAnchor = nearby.firstOrNull { t -> spoken.any { w -> t.contains(w, ignoreCase = true) } }
         return when {
             label != null && !n.editable && unique(label) -> UniqueKey(KeyKind.LABEL, norm(label))
             // "Add" on the card the user named: keep that link even if the id happens to be unique right now.
-            spokenAnchor != null && listItem(n) != null -> UniqueKey(KeyKind.NEAR_TEXT, norm(spokenAnchor))
+            spokenAnchor != null && !n.editable && listItem(n) != null -> UniqueKey(KeyKind.NEAR_TEXT, norm(spokenAnchor))
             n.id != null && isStableId(n.id) && visible.count { it.id == n.id } == 1 -> UniqueKey(KeyKind.ID, n.id)
             // Prefer "Continue" over "2 items added": counts change between runs.
             else -> subTexts.filter { unique(it) && isStable(it) }.minByOrNull { it.count(Char::isDigit) }?.let { UniqueKey(KeyKind.CHILD_TEXT, norm(it)) }
@@ -66,8 +66,13 @@ object Identity {
     fun isStableId(id: String) = !Regex("\\d{3,}").containsMatchIn(id)
 
     /** The row/card the node lives in: the child of the nearest scrollable list, else a few parents up. */
-    fun listItem(n: UiNode): UiNode? =
-        (sequenceOf(n) + n.ancestors()).firstOrNull { it.parent?.scrollable == true }
+    fun listItem(n: UiNode): UiNode? {
+        val root = n.ancestors().lastOrNull() ?: n
+        val maxH = (root.b - root.t) * 0.4
+        // A card is small: Zomato's whole restaurant page is one ScrollView, and its children aren't "cards".
+        return (sequenceOf(n) + n.ancestors()).firstOrNull { it.parent?.scrollable == true }
+            ?.takeIf { maxH <= 0 || it.b - it.t <= maxH }
+    }
 
     private fun anchor(n: UiNode): UiNode = listItem(n) ?: n.ancestors().take(2).lastOrNull() ?: n
 

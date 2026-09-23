@@ -178,6 +178,7 @@ class MynaService : AccessibilityService(), Device {
         val (root, node) = snapshotAround(src) ?: return
         // The user already tapped it (their choice), but a recipe must never contain it.
         SafetyGate.checkTap(node, root, pkg)?.let { return stopRecording(it) }
+        inferMissedTap(rec, root, pkg)
         rec.onTap(Identity.target(node, root, rec.spoken), screenOf(root, pkg))
         updateOverlay()
     }
@@ -190,6 +191,7 @@ class MynaService : AccessibilityService(), Device {
         // Never record what goes into an OTP/password/card field.
         SafetyGate.checkTap(node, root, pkg)?.let { return stopRecording(it) }
         if (src.isPassword) return
+        inferMissedTap(rec, root, pkg)
         val text = listOf(eventText, src.text?.toString().orEmpty())
             .firstOrNull { it.isNotBlank() && !Identity.isPlaceholder(node, it) }
             ?.takeUnless { src.isShowingHintText && it == src.text?.toString() }
@@ -211,8 +213,18 @@ class MynaService : AccessibilityService(), Device {
         val pkg = live.packageName?.toString() ?: return
         if (pkg == packageName || pkg == launcherPkg || pkg in IGNORED_PACKAGES) return
         val root = UiTree.capture(live)
+        val screen = inferMissedTap(rec, root, pkg)
+        rec.onScreen(screen, Identity.compact(root))
+        // Teaching ends by itself at the payment/credential screen, before the user can tap "Place Order".
+        SafetyGate.check(root, pkg)?.let { stopRecording(it) }
+    }
+
+    /**
+     * New activity but no step since the last settled screen → the app ate the click event (Zomato suggestions).
+     * Runs on settle AND right before recording the next tap/typing: pages with autoplay video never settle.
+     */
+    private fun inferMissedTap(rec: Recorder, root: UiNode, pkg: String): Screen {
         val screen = screenOf(root, pkg)
-        // New activity but no step since the last settled screen → the app ate the click event.
         val prev = prevSettled
         if (prev != null && rec.steps.size == stepsAtPrevSettle && screen.title != prev.second.title) {
             // After typing, the pick must match the query ("dominos" → "Domino's Pizza", not "Pizza Bite House").
@@ -230,9 +242,7 @@ class MynaService : AccessibilityService(), Device {
         }
         prevSettled = root to screen
         stepsAtPrevSettle = rec.steps.size
-        rec.onScreen(screen, Identity.compact(root))
-        // Teaching ends by itself at the payment/credential screen, before the user can tap "Place Order".
-        SafetyGate.check(root, pkg)?.let { stopRecording(it) }
+        return screen
     }
 
     /** Replay (Phase 3) waits on this; same rule the recorder uses. */
