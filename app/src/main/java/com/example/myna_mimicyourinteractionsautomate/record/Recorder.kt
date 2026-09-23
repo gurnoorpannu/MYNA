@@ -68,8 +68,8 @@ class Recorder(
         }
     }
 
-    fun finish(stoppedBy: String = "user") =
-        Recording(utterance, app, startedAt, steps.toList(), stoppedBy, snapshots.toMap())
+    fun finish(stoppedBy: String = "user", reason: String? = null) =
+        Recording(utterance, app, startedAt, steps.toList(), stoppedBy, reason, snapshots.toMap())
 
     private fun add(step: Step) {
         steps += step

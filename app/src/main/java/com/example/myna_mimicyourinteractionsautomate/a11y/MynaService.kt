@@ -1,9 +1,15 @@
 package com.example.myna_mimicyourinteractionsautomate.a11y
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.GestureDescription
+import android.graphics.Color
+import android.graphics.Path
+import android.speech.tts.TextToSpeech
+import android.widget.TextView
 import android.content.ComponentName
 import android.content.Intent
 import android.graphics.PixelFormat
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -20,6 +26,8 @@ import com.example.myna_mimicyourinteractionsautomate.recipe.RecipeJson
 import com.example.myna_mimicyourinteractionsautomate.recipe.Screen
 import com.example.myna_mimicyourinteractionsautomate.recipe.SystemKey
 import com.example.myna_mimicyourinteractionsautomate.record.Recorder
+import com.example.myna_mimicyourinteractionsautomate.safety.GatedActor
+import com.example.myna_mimicyourinteractionsautomate.safety.SafetyGate
 import com.example.myna_mimicyourinteractionsautomate.screen.Identity
 import com.example.myna_mimicyourinteractionsautomate.screen.UiNode
 import kotlinx.coroutines.delay
@@ -67,15 +75,22 @@ class MynaService : AccessibilityService() {
     private var stepsAtPrevSettle = 0
     private val activityOf = mutableMapOf<String, String>()
     private var overlay: Button? = null
+    private var handOffView: TextView? = null
+    private var tts: TextToSpeech? = null
+
+    /** Replay's only way to act on other apps: every tap/type is checked by the safety gate first. */
+    val actor = GatedActor(click = ::clickNode, setText = ::setNodeText, onBlocked = { handOff(it) })
 
     override fun onServiceConnected() {
         instance = this
         if (dumping) newDumpSession()
+        tts = TextToSpeech(this) {}
         Log.i(TAG, "service connected, launcher=$launcherPkg")
     }
 
     override fun onDestroy() {
         instance = null
+        tts?.shutdown()
         super.onDestroy()
     }
 
@@ -127,14 +142,18 @@ class MynaService : AccessibilityService() {
         val rec = recorder ?: return
         if (pkg == launcherPkg) return
         val (root, node) = snapshotAround(src) ?: return
+        // The user already tapped it (their choice), but a recipe must never contain it.
+        SafetyGate.checkTap(node, root, pkg)?.let { return stopRecording(it) }
         rec.onTap(Identity.target(node, root, rec.spoken), screenOf(root, pkg))
         updateOverlay()
     }
 
     private fun onTextChanged(pkg: String, src: AccessibilityNodeInfo) {
         val rec = recorder ?: return
-        if (src.isPassword) return stopRecording("safety_gate")   // Phase 2 gate will generalise this
         val (root, node) = snapshotAround(src) ?: return
+        // Never record what goes into an OTP/password/card field.
+        SafetyGate.checkTap(node, root, pkg)?.let { return stopRecording(it) }
+        if (src.isPassword) return
         val text = if (src.isShowingHintText) "" else src.text?.toString().orEmpty()
         rec.onText(Identity.target(node, root, rec.spoken), text, screenOf(root, pkg))
         updateOverlay()
@@ -162,7 +181,8 @@ class MynaService : AccessibilityService() {
         prevSettled = root to screen
         stepsAtPrevSettle = rec.steps.size
         rec.onScreen(screen, Identity.compact(root))
-        if (root.walk().any { it.password && it.visible }) stopRecording("safety_gate")
+        // Teaching ends by itself at the payment/credential screen, before the user can tap "Place Order".
+        SafetyGate.check(root, pkg)?.let { stopRecording(it) }
     }
 
     /** Replay (Phase 3) waits on this; same rule the recorder uses. */
@@ -204,18 +224,79 @@ class MynaService : AccessibilityService() {
         return true
     }
 
-    fun stopRecording(stoppedBy: String = "user") {
+    private fun stopRecording(block: SafetyGate.Block) {
+        stopRecording("safety_gate", block.reason)
+        handOff(block)
+    }
+
+    fun stopRecording(stoppedBy: String = "user", reason: String? = null) {
         val rec = recorder ?: return
         recorder = null
         hideOverlay()
-        val recording = rec.finish(stoppedBy)
+        val recording = rec.finish(stoppedBy, reason)
         val dir = File(getExternalFilesDir(null), "recordings").apply { mkdirs() }
         val file = File(dir, "rec-${recording.startedAt}.json")
         file.writeText(RecipeJson.encodeToString(recording))
         Log.i(TAG, "saved ${recording.steps.size} steps → $file (stopped by $stoppedBy)")
-        val why = if (stoppedBy == "safety_gate") "Stopped at a secure screen — your turn. " else ""
-        Toast.makeText(this, "${why}Saved ${recording.steps.size} steps", Toast.LENGTH_LONG).show()
-        startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+        Toast.makeText(this, "Saved ${recording.steps.size} steps", Toast.LENGTH_SHORT).show()
+        // At a secure screen, leave the user there to finish it; otherwise show the step list.
+        if (stoppedBy != "safety_gate") {
+            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+        }
+    }
+
+    // ---------------------------------------------------------------- safety hand-off + actions
+
+    /** "Your turn": big banner + spoken message. MYNA makes no further taps. */
+    fun handOff(block: SafetyGate.Block) {
+        Log.w(TAG, "hand-off: ${block.kind} ${block.reason}")
+        val what = when (block.kind) {
+            SafetyGate.Kind.PAYMENT, SafetyGate.Kind.FINAL_ORDER -> "the payment step"
+            SafetyGate.Kind.CREDENTIAL -> "a secure field"
+            SafetyGate.Kind.LOGIN -> "a login screen"
+        }
+        val msg = "Your turn. This is $what, so I won't tap here."
+        tts?.speak(msg, TextToSpeech.QUEUE_FLUSH, null, "handoff")
+        main.post {
+            handOffView?.let { getSystemService(WindowManager::class.java).removeView(it) }
+            val v = TextView(this).apply {
+                text = "🔒 $msg\n(${block.reason})\nTap to dismiss"
+                textSize = 18f
+                setTextColor(Color.WHITE)
+                setBackgroundColor(0xE6202124.toInt())
+                setPadding(48, 40, 48, 40)
+                setOnClickListener { dismissHandOff() }
+            }
+            val lp = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT,
+            ).apply { gravity = Gravity.TOP; y = 120 }
+            getSystemService(WindowManager::class.java).addView(v, lp)
+            handOffView = v
+            main.postDelayed(::dismissHandOff, 10_000)
+        }
+    }
+
+    private fun dismissHandOff() {
+        handOffView?.let { getSystemService(WindowManager::class.java).removeView(it) }
+        handOffView = null
+    }
+
+    /** Only called by [actor], after the gate said yes. */
+    private fun clickNode(n: UiNode): Boolean {
+        val live = n.live as? AccessibilityNodeInfo
+        if (live?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true) return true
+        // Click refused (custom views): tap the centre of its bounds.
+        val path = Path().apply { moveTo((n.l + n.r) / 2f, (n.t + n.b) / 2f) }
+        return dispatchGesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, 60)).build(), null, null)
+    }
+
+    /** Only called by [actor], after the gate said yes. */
+    private fun setNodeText(n: UiNode, text: String): Boolean {
+        val live = n.live as? AccessibilityNodeInfo ?: return false
+        val args = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text) }
+        return live.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
     }
 
     private fun showOverlay() {

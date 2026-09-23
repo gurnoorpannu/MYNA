@@ -129,5 +129,6 @@ data class Recording(
     val startedAt: Long,
     val steps: List<Step>,
     val stoppedBy: String = "user",                   // "user" | "safety_gate"
+    val stopReason: String? = null,                   // gate's reason, e.g. "\"Place Order\" button on screen"
     val snapshots: Map<String, String> = emptyMap(),  // screen signature → compact screen text
 )

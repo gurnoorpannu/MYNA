@@ -107,7 +107,7 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun RecordingCard(r: Recording) {
-        Text("Last recording: \"${r.utterance}\" (${r.steps.size} steps, stopped by ${r.stoppedBy})",
+        Text("Last recording: \"${r.utterance}\" (${r.steps.size} steps, stopped by ${r.stoppedBy}${r.stopReason?.let { ": $it" } ?: ""})",
             style = MaterialTheme.typography.titleSmall)
         r.steps.forEachIndexed { i, s ->
             Text("${i + 1}. ${s.describe()}", style = MaterialTheme.typography.bodySmall)
