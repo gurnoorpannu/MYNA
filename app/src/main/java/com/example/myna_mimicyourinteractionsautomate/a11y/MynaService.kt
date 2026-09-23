@@ -69,6 +69,10 @@ class MynaService : AccessibilityService(), Device {
         const val TAG = "Myna"
         const val SETTLE_MS = 600L     // no UI change for this long = screen settled (recorder + replay)
         @Volatile var instance: MynaService? = null
+        /** MainActivity listens so the list refreshes when a compile or run finishes. */
+        @Volatile var onChanged: (() -> Unit)? = null
+        /** Last compile's extras for the UI: removed steps and questions. */
+        @Volatile var lastCompile: com.example.myna_mimicyourinteractionsautomate.compile.Compiler.Result? = null
         @Volatile var dumping = false
             set(value) { field = value; if (value) instance?.newDumpSession() }
 
@@ -311,11 +315,26 @@ class MynaService : AccessibilityService(), Device {
         val file = File(dir, "rec-${recording.startedAt}.json")
         file.writeText(RecipeJson.encodeToString(recording))
         Log.i(TAG, "saved ${recording.steps.size} steps → $file (stopped by $stoppedBy)")
-        Toast.makeText(this, "Saved ${recording.steps.size} steps", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Saved ${recording.steps.size} steps — learning…", Toast.LENGTH_SHORT).show()
+        scope.launch { learn(recording) }
         // At a secure screen, leave the user there to finish it; otherwise show the step list.
         if (stoppedBy != "safety_gate") {
             startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
         }
+    }
+
+    /** Compile the demo into a recipe (one AI call), save it, and confirm out loud (T1). */
+    private suspend fun learn(recording: com.example.myna_mimicyourinteractionsautomate.recipe.Recording) {
+        val res = com.example.myna_mimicyourinteractionsautomate.compile.Compiler.compile(recording)
+        recipes.save(res.recipe)
+        lastCompile = res
+        val spoken = com.example.myna_mimicyourinteractionsautomate.replay.Slots.fill(
+            res.recipe.summary ?: res.recipe.utterance, res.recipe.slots.mapValues { it.value.value.orEmpty() })
+        say("Learned: $spoken.")
+        if (res.removed.isNotEmpty()) say("I left out ${res.removed.size} step${if (res.removed.size > 1) "s" else ""} that looked like mistakes.")
+        res.questions.firstOrNull()?.let { say(it) }
+        Log.i(TAG, "learned ${res.recipe.id}: ${res.recipe.summary} slots=${res.recipe.slots.keys} removed=${res.removed} q=${res.questions}")
+        onChanged?.invoke()
     }
 
     // ---------------------------------------------------------------- safety hand-off + actions

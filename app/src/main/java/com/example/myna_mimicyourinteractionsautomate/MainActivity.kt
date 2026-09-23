@@ -120,28 +120,61 @@ class MainActivity : ComponentActivity() {
         r.steps.forEachIndexed { i, s ->
             Text("${i + 1}. ${s.describe()}", style = MaterialTheme.typography.bodySmall)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(enabled = serviceOn, onClick = { replay(listOf(Recipes.fromRecording(r))) }) { Text("Replay now") }
-            Button(onClick = {
-                MynaService.instance?.recipes?.save(Recipes.fromRecording(r, golden = true)); refresh()
-            }) { Text("Save as golden") }
-        }
+        Button(enabled = serviceOn, onClick = { replay(listOf(Recipes.fromRecording(r))) }) { Text("Replay raw recording") }
     }
 
     @Composable
     private fun RecipesCard() {
         val golden = recipes.filter { it.golden }
         Text("Recipes (${recipes.size})", style = MaterialTheme.typography.titleMedium)
-        Button(enabled = serviceOn && golden.isNotEmpty(), onClick = { replay(golden) }) {
-            Text("★ Golden run (${golden.size})")
+        MynaService.lastCompile?.let { c ->
+            if (c.removed.isNotEmpty()) Text("Left out as mistakes: " + c.removed.joinToString("; "), style = MaterialTheme.typography.bodySmall)
+            c.questions.forEach { Text("❓ $it", color = MaterialTheme.colorScheme.error) }
         }
-        recipes.forEach { r ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text((if (r.golden) "★ " else "") + "${r.utterance} · ${r.app.substringAfterLast('.')}",
-                    Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                Button(enabled = serviceOn, onClick = { replay(listOf(r)) }) { Text("Run") }
+        Button(enabled = serviceOn && golden.isNotEmpty(), onClick = { replay(golden) }) { Text("★ Golden run (${golden.size})") }
+        recipes.reversed().forEach { RecipeCard(it) }
+    }
+
+    /** One recipe: blanks as fields (voice replaces this in Phase 5), run, golden star, inspectable/editable steps (T1). */
+    @Composable
+    private fun RecipeCard(r: Recipe) {
+        var open by remember(r.id) { mutableStateOf(false) }
+        val values = remember(r.id) { r.slots.mapValues { mutableStateOf(it.value.value.orEmpty()) } }
+        HorizontalDivider()
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text((if (r.golden) "★ " else "") + (r.summary ?: r.utterance), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+            Button(onClick = { save(r.copy(golden = !r.golden)) }) { Text(if (r.golden) "Unstar" else "★") }
+        }
+        values.forEach { (name, v) ->
+            OutlinedTextField(v.value, { v.value = it }, Modifier.fillMaxWidth(), label = { Text("{$name}") },
+                supportingText = r.slots[name]?.neighbours?.takeIf { it.isNotEmpty() }?.let { n -> { Text("e.g. " + n.take(3).joinToString()) } })
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(enabled = serviceOn, onClick = { replay(listOf(r), values.mapValues { it.value.value }) }) { Text("Run") }
+            Button(onClick = { open = !open }) { Text(if (open) "Hide steps" else "Steps") }
+        }
+        if (open) {
+            if (r.paraphrases.isNotEmpty()) Text("Also understands: " + r.paraphrases.joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+            if (r.defaults.isNotEmpty()) Text("Habit defaults: " + r.defaults.values.joinToString(), style = MaterialTheme.typography.bodySmall)
+            r.subtasks.forEachIndexed { si, sub ->
+                Text("▸ ${sub.name}${sub.why.takeIf { it.isNotBlank() }?.let { " — $it" } ?: ""}", style = MaterialTheme.typography.labelLarge)
+                sub.steps.forEachIndexed { i, st ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text((if (st.noise) "✗ " else "") + st.describe() + (st.why.takeIf { it.isNotBlank() }?.let { "\n   $it" } ?: "") +
+                            (st.screen?.note?.let { "  [$it]" } ?: ""), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                        Button(onClick = {
+                            val subs = r.subtasks.toMutableList()
+                            subs[si] = sub.copy(steps = sub.steps.filterIndexed { k, _ -> k != i })
+                            save(r.copy(subtasks = subs.filter { it.steps.isNotEmpty() }))
+                        }) { Text("✕") }
+                    }
+                }
             }
         }
+    }
+
+    private fun save(r: Recipe) {
+        Recipes(File(getExternalFilesDir(null), "recipes")).save(r); refresh()
     }
 
     @Composable
@@ -154,8 +187,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun replay(list: List<Recipe>) {
-        MynaService.instance?.replay(list) { runOnUiThread { refresh() } }
+    private fun replay(list: List<Recipe>, slots: Map<String, String> = emptyMap()) {
+        MynaService.instance?.replay(list, slots) { runOnUiThread { refresh() } }
     }
 
     @Composable
@@ -177,6 +210,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        MynaService.onChanged = { runOnUiThread { refresh() } }
         refresh()
     }
 

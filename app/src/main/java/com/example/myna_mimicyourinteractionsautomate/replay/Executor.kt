@@ -46,7 +46,9 @@ class Executor(
 
     private class Stop(val outcome: Outcome, val reason: String) : Exception(reason)
 
-    suspend fun run(recipe: Recipe, slots: Map<String, String> = emptyMap()): RunLog {
+    suspend fun run(recipe: Recipe, given: Map<String, String> = emptyMap()): RunLog {
+        // Unsaid blanks fall back to the demo's value / default ("Margherita", qty 1…).
+        val slots = recipe.slots.mapNotNull { (k, v) -> (v.value ?: v.default)?.let { k to it } }.toMap() + given.filterValues { it.isNotBlank() }
         val log = RunLog(recipe.id, recipe.utterance, device.now())
         val steps = recipe.subtasks.flatMap { it.steps }.filter { !it.noise }
         try {
