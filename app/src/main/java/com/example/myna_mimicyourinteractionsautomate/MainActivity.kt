@@ -257,9 +257,11 @@ class MainActivity : ComponentActivity() {
     private fun AskMyna() {
         val scope = rememberCoroutineScope()
         var input by remember { mutableStateOf("") }
+        // Listen right here on Home (green circle, live words); the chat opens once something was heard.
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            MicHero(busy = false, listening = false, caption = "What do you want to do with MYNA today?",
-                onTap = { chatOpen = true; startListening(scope) })
+            MicHero(busy = false, listening = listening && !chatOpen,
+                caption = if (listening && !chatOpen) liveWords.ifBlank { "Listening…" } else "What do you want to do with MYNA today?",
+                onTap = { startListening(scope) })
         }
         OutlinedTextField(input, { input = it }, Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(16.dp),
             placeholder = { Text("Or type a command") },
@@ -273,6 +275,7 @@ class MainActivity : ComponentActivity() {
         if (listening) { voice.stop(); listening = false; return }   // tap again to stop
         listen { heard ->
             val fixed = SpeechFix.fix(heard, SpeechFix.vocabulary(recipes))
+            chatOpen = true   // first words heard → the conversation slides up with them
             scope.launch { onUserSaid(fixed.text, fixed.changes) }
         }
     }
