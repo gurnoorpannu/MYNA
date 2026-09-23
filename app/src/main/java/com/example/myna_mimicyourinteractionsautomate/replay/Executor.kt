@@ -100,6 +100,7 @@ class Executor(
             StepType.TAP, StepType.TYPE -> act(step, slots, sl)
             StepType.GOAL -> when (step.goal) {
                 "search" -> search(step, slots, sl)
+                "confirm_sheet" -> confirmSheet(sl)
                 else -> { sl.status = "skipped"; sl.note = "goal ${step.goal} not built yet" }   // Phase 6
             }
         }
@@ -214,6 +215,24 @@ class Executor(
         throw Stop(Outcome.STUCK, "searched \"$query\" but couldn't open \"$pick\"")
     }
 
+    /** Press the open sheet's main button (OCR "Add item ₹109", else its blank button box). Done when the sheet is gone. */
+    private suspend fun confirmSheet(sl: StepLog) {
+        for (attempt in 0 until 3) {
+            val (root, pkg) = device.screen() ?: throw Stop(Outcome.FAILED, "screen unreadable")
+            SafetyGate.check(root, pkg)?.let { device.actor.handOff(it); throw Stop(Outcome.HANDED_OFF, it.reason) }
+            if (!Identity.isModal(root)) { sl.status = "ok"; if (attempt == 0) sl.note = "no sheet open"; return }
+            val bottom = root.t + (root.b - root.t) * 3 / 4
+            val line = device.ocr().filter { it.t >= bottom && CONFIRM.containsMatchIn(it.text) }.maxByOrNull { it.r - it.l }
+            val target = line?.let { UiNode(text = it.text, cls = "OcrText", clickable = true, l = it.l, t = it.t, r = it.r, b = it.b) }
+                ?: Identity.blankSheetButton(root)
+                ?: throw Stop(Outcome.STUCK, "couldn't find the button that confirms the options sheet")
+            sl.level = if (line != null) 4 else 2
+            sl.note = "pressed \"${line?.text ?: "sheet button"}\""
+            if (device.actor.tap(target, root, pkg) is GatedActor.Result.Blocked) throw Stop(Outcome.HANDED_OFF, "blocked on the options sheet")
+        }
+        throw Stop(Outcome.STUCK, "the options sheet didn't close")
+    }
+
     /** Wait for the screen to settle and compare with the demo's next screen. A mismatch is noted, not fatal: the next step's finder decides. */
     private suspend fun verify(step: Step, sl: StepLog) {
         val expected = step.next ?: return
@@ -253,6 +272,7 @@ class Executor(
 
     companion object {
         const val MAX_SCROLLS = 5
+        private val CONFIRM = Regex("^(add item|add to cart|add|done|confirm|continue|save|apply|update)\\b", RegexOption.IGNORE_CASE)
         private val CHECKOUT = Regex("^(view cart|go to cart|checkout|proceed to checkout|proceed to buy|continue to checkout|continue)\\b", RegexOption.IGNORE_CASE)
         const val SAME_SCREEN_LIMIT = 3 + MAX_SCROLLS + 2   // scrolls/pop-up retries legitimately revisit a screen
         private val OCR_KEYS = setOf(KeyKind.OCR, KeyKind.LABEL, KeyKind.CHILD_TEXT, KeyKind.NEAR_TEXT)

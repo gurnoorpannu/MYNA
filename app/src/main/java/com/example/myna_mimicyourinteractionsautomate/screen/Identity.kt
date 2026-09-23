@@ -142,6 +142,24 @@ object Identity {
     fun showsQuery(root: UiNode, query: String): Boolean =
         root.walk().any { it.visible && it.label?.let { l -> loose(l) == loose(query) } == true }
 
+    /** A bottom sheet / dialog is open (Material's "touch_outside" scrim, or a BottomSheet / Dialog container). */
+    fun isModal(root: UiNode): Boolean = root.walk().any { n ->
+        n.visible && (n.id == "touch_outside" || n.id?.contains("bottom_sheet") == true ||
+            n.cls?.let { it.contains("BottomSheet") || it.endsWith("Dialog") } == true)
+    }
+
+    /**
+     * The sheet's main button when it has no text (Zomato's "Add item ₹109" is a blank ViewGroup the app draws on):
+     * the widest non-clickable, text-less box inside a "*button*" container in the bottom quarter.
+     */
+    fun blankSheetButton(root: UiNode): UiNode? {
+        val bottom = root.t + (root.b - root.t) * 3 / 4
+        return root.walk().filter { n ->
+            n.visible && n.label == null && n.children.none { it.label != null } && n.t >= bottom && n.r - n.l > (root.r - root.l) / 3 &&
+                n.ancestors().any { a -> a.id?.contains("button", ignoreCase = true) == true }
+        }.maxByOrNull { it.r - it.l }
+    }
+
     /** A clickable, non-editable element that says "search" (label, id or description). */
     fun searchBar(root: UiNode): UiNode? = root.walk().firstOrNull { n ->
         n.visible && n.clickable && !n.editable &&

@@ -224,7 +224,11 @@ class MynaService : AccessibilityService(), Device {
     private fun inferMissedTap(rec: Recorder, root: UiNode, pkg: String): Screen {
         val screen = screenOf(root, pkg)
         val prev = prevSettled
-        if (prev != null && rec.steps.size == stepsAtPrevSettle && screen.title != prev.second.title) {
+        val lastWasBack = rec.steps.lastOrNull()?.key == SystemKey.BACK
+        if (prev != null && rec.steps.size == stepsAtPrevSettle && !lastWasBack &&
+            Identity.isModal(prev.first) && !Identity.isModal(root)) {
+            rec.onSheetConfirmed(prev.second)
+        } else if (prev != null && rec.steps.size == stepsAtPrevSettle && screen.title != prev.second.title) {
             val query = rec.lastTyped
             if (rec.inSearch && query != null) {
                 // Typed, then landed somewhere new without a visible tap: it's a search. Name where we landed.

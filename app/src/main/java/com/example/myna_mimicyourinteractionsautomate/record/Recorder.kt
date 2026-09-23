@@ -54,6 +54,10 @@ class Recorder(
         }
     }
 
+    /** A bottom sheet closed with no visible tap and no Back: the user pressed its main button, keeping the shown options. */
+    fun onSheetConfirmed(screen: Screen) = add(Step(StepType.GOAL, goal = "confirm_sheet", screen = screen,
+        why = "confirm the options sheet with its defaults"))
+
     /** True while the last step is typing or a search goal (the next screen change belongs to the search). */
     val inSearch: Boolean get() = steps.lastOrNull()?.let { it.type == StepType.TYPE || (it.type == StepType.GOAL && it.goal == "search") } == true
 
@@ -120,7 +124,7 @@ fun Step.describe(): String {
         StepType.TYPE -> "type \"$text\" into ${target?.label ?: target?.id ?: "field"}" + if (submit) " + Enter" else ""
         StepType.TAP -> "tap " + (target?.label ?: target?.key?.value ?: "?") +
             (target?.key?.takeIf { it.value != target.label }?.let { " (${it.by.name.lowercase()}: ${it.value})" } ?: "")
-        StepType.GOAL -> if (goal == "search") "search \"$text\"" + (args["pick"]?.let { " and open \"$it\"" } ?: "") else "$goal $args"
+        StepType.GOAL -> if (goal == "confirm_sheet") "confirm the options sheet" else if (goal == "search") "search \"$text\"" + (args["pick"]?.let { " and open \"$it\"" } ?: "") else "$goal $args"
     }
     return if (noise) "(mistake?) $what" else what
 }

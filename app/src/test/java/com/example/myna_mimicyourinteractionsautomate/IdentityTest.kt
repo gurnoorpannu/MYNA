@@ -263,3 +263,20 @@ class AddLabelTest {
         assertEquals(false, Identity.showsQuery(UiNode(children = listOf(UiNode(text = "Search in Domino's Pizza"))), "dominos"))
     }
 }
+
+/** Real 23 Sep Zomato sheet: "Add item ₹109" is a blank ViewGroup beside the − 1 + stepper. */
+class SheetTest {
+    private val sheet = UiNode(cls = "FrameLayout", r = 1080, b = 2340, children = listOf(
+        UiNode(id = "touch_outside", clickable = true, r = 1080, b = 2340),
+        UiNode(text = "Crust", t = 704, b = 763, r = 980),
+        UiNode(id = "bottom_container", t = 1991, b = 2205, r = 1080, children = listOf(
+            UiNode(id = "button_container", t = 1991, b = 2205, r = 1080, children = listOf(
+                UiNode(id = "ll_root", clickable = true, l = 34, t = 2030, r = 326, b = 2165, children = listOf(
+                    UiNode(text = "1", id = "text_view_title", l = 131, t = 2030, r = 228, b = 2165))),
+                UiNode(cls = "ViewGroup", l = 360, t = 2025, r = 1046, b = 2171)))))))
+
+    @Test fun findsTheBlankAddItemBox() {
+        assertTrue(Identity.isModal(sheet))
+        assertEquals(listOf(360, 2025, 1046, 2171), Identity.blankSheetButton(sheet)?.bounds)
+    }
+}

@@ -28,6 +28,7 @@ import org.junit.Test
  */
 class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Device {
     var state = "home"
+    var sheetFor: String? = null      // customisation sheet open for this dish
     var typed = ""
     val cart = mutableListOf<String>()
     val taps = mutableListOf<String>()
@@ -49,6 +50,12 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
         "search" -> UiNode(cls = "FrameLayout", b = 2400, children = listOf(
             UiNode(id = "edittext", hint = "Restaurant name or a dish...", text = "Type to search restaurants or dishes", editable = true, clickable = true, t = 100, b = 200),
             UiNode(cls = "ComposeView", scrollable = true, t = 300, b = 2400)))      // text-less suggestions
+        // Options sheet after Add: the "Add item ₹109" button is a blank box (only OCR can read it).
+        "sheet" -> UiNode(cls = "FrameLayout", b = 2400, children = listOf(
+            UiNode(id = "touch_outside", clickable = true, b = 2400, r = 1080),
+            t("Crust", 700), t("New Hand Tossed", 900), t(sheetFor!!, 450),
+            UiNode(id = "button_container", t = 1990, b = 2200, r = 1080, children = listOf(
+                UiNode(cls = "ViewGroup", l = 360, t = 2025, r = 1046, b = 2171)))))
         // Results page (after Enter or a suggestion tap): accessible rows, the restaurant twice.
         "results" -> UiNode(cls = "FrameLayout", b = 2400, children = listOf(
             UiNode(id = "edittext", text = "Type to search restaurants or dishes", editable = true, t = 100, b = 200),
@@ -75,8 +82,11 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
     override suspend fun launchClean(pkg: String) = true.also { state = "home" }
     override fun key(key: SystemKey) {}
     override fun scroll(list: UiNode, forward: Boolean) = false
-    override suspend fun ocr() = if (state == "search" && typed.isNotEmpty())
-        listOf(OcrLine("Domino's Pizza", 40, 320, 600, 380), OcrLine("Dominos pizza near me", 40, 420, 600, 480)) else emptyList()
+    override suspend fun ocr() = when {
+        state == "search" && typed.isNotEmpty() -> listOf(OcrLine("Domino's Pizza", 40, 320, 600, 380), OcrLine("Dominos pizza near me", 40, 420, 600, 480))
+        state == "sheet" -> listOf(OcrLine("Crust", 60, 700, 300, 760), OcrLine("Add item ₹109", 420, 2070, 980, 2130))
+        else -> emptyList()
+    }
     override suspend fun ask(question: String, options: List<String>): String? = null
     override fun say(text: String) {}
     override fun now() = clock.also { clock += 100 }
@@ -91,7 +101,8 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
             n.cls == "OcrText" && n.text == "Domino's Pizza" -> state = "results"
             n.id == "top_row" || n.id == "res_card" -> state = "menu"
             n.id == "pizza_hut" -> error("opened the wrong restaurant!")
-            n.id == "button_add" -> cart += n.parent!!.children[2].text!!
+            n.id == "button_add" -> { sheetFor = n.parent!!.children[2].text!!; state = "sheet" }
+            n.cls == "OcrText" && n.text!!.startsWith("Add item") -> { cart += sheetFor!!; state = "menu" }
             n.id == "cart_bar" -> state = "cart"
             n.id == "cv_checkout_container" -> error("tapped Place Order!")
         }
@@ -111,6 +122,7 @@ class ExecutorTest {
             Step(StepType.GOAL, goal = "search", text = "{restaurant}", args = mapOf("pick" to "{restaurant_name}"), screen = Screen("s", lang = "en"),
                 target = Target(label = "Restaurant name or a dish...", id = "edittext", key = UniqueKey(KeyKind.ID, "edittext"))),
             step(StepType.TAP, Target(id = "button_add", cls = "View", key = UniqueKey(KeyKind.NEAR_TEXT, "{item}"))),
+            Step(StepType.GOAL, goal = "confirm_sheet"),
             step(StepType.TAP, Target(id = "cart_bar", key = UniqueKey(KeyKind.CHILD_TEXT, "View Cart"))),
         ))))
     private val demo = mapOf("restaurant" to "Domino's", "restaurant_name" to "Domino's Pizza", "item" to "Margherita Pizza")
