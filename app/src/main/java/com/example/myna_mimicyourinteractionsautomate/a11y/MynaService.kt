@@ -161,6 +161,13 @@ class MynaService : AccessibilityService(), Device {
                 if (dumping) dumpScreen("click", JSONObject().put("text", e.text.joinToString(" ")).put("id", e.source?.viewIdResourceName))
             }
             AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> e.source?.let { onTextChanged(pkg, it, e.text.joinToString("")) }
+            // Focus jumped from the text field to the page (Amazon's results WebView): the search was submitted.
+            AccessibilityEvent.TYPE_VIEW_FOCUSED -> recorder?.let { rec ->
+                if (typingWithKeyboard && e.source?.isEditable == false) {
+                    typingWithKeyboard = false
+                    if (rec.steps.lastOrNull()?.type == StepType.TYPE) rec.markSubmit()
+                }
+            }
         }
         lastPkg = pkg
     }
