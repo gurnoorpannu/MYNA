@@ -46,6 +46,9 @@ class Executor(
 
     private class Stop(val outcome: Outcome, val reason: String) : Exception(reason)
 
+    /** Text typed by the previous step and not submitted yet: if the next target doesn't show up, press Enter. */
+    private var unsubmitted: String? = null
+
     suspend fun run(recipe: Recipe, given: Map<String, String> = emptyMap()): RunLog {
         // Unsaid blanks fall back to the demo's value / default ("Margherita", qty 1…).
         val slots = recipe.slots.mapNotNull { (k, v) -> (v.value ?: v.default)?.let { k to it } }.toMap() + given.filterValues { it.isNotBlank() }
@@ -56,7 +59,9 @@ class Executor(
                 val sl = StepLog(i + 1, step.describe()).also { log.steps += it }
                 onStep(sl, steps.size)
                 val t0 = device.now()
+                val pending = unsubmitted
                 runStep(step, slots, sl, recipe)
+                if (unsubmitted == pending) unsubmitted = null   // any other step consumes it
                 sl.ms = device.now() - t0
             }
             finish(recipe, log)
@@ -140,7 +145,13 @@ class Executor(
             SafetyGate.check(root, pkg)?.let { device.actor.handOff(it); throw Stop(Outcome.HANDED_OFF, it.reason) }
             checkStuck(root, step, screen.signature, seen, start)
 
-            val found = Finder.find(root, target) ?: ocrFind(target)?.let { Finder.Found(it, 4, "ocr \"${it.label}\"") }
+            var found = Finder.find(root, target) ?: ocrFind(target)?.let { Finder.Found(it, 4, "ocr \"${it.label}\"") }
+            // A TYPE target that is only a search *button* (Amazon home): tap it to open the real field.
+            if (found != null && step.type == StepType.TYPE && !found.node.editable) {
+                val field = root.walk().firstOrNull { it.visible && it.editable }
+                if (field != null) found = Finder.Found(field, found.level, "the text field")
+                else if (!openedSearch) { openedSearch = true; device.actor.tap(found.node, root, pkg); continue }
+            }
             if (found != null) {
                 sl.level = found.level
                 sl.note = found.how
@@ -152,13 +163,25 @@ class Executor(
                 val r = if (step.type == StepType.TYPE) device.actor.type(found.node, text.orEmpty(), root, pkg, step.submit)
                         else device.actor.tap(found.node, root, pkg)
                 when (r) {
-                    GatedActor.Result.Done -> { verify(step, sl); sl.status = "ok"; return }
+                    GatedActor.Result.Done -> {
+                        if (step.type == StepType.TYPE && !step.submit) unsubmitted = text
+                        verify(step, sl); sl.status = "ok"; return
+                    }
                     is GatedActor.Result.Blocked -> throw Stop(Outcome.HANDED_OFF, r.block.reason)
                     GatedActor.Result.Failed -> throw Stop(Outcome.FAILED, "the app refused the ${step.type.name.lowercase()} on ${found.how}")
                 }
             }
 
             // Not found. Fallbacks, cheapest first; each one can only happen a bounded number of times.
+            unsubmitted?.let { q ->
+                // The demo pressed the keyboard's search key after typing (apps don't report it): do the same.
+                unsubmitted = null
+                root.walk().firstOrNull { it.visible && it.editable }?.let { f ->
+                    sl.note = "pressed search for \"$q\""
+                    device.actor.type(f, q, root, pkg, submit = true)
+                    continue
+                }
+            }
             val close = Finder.closeButton(root)
             if (!closedPopup && close != null) {
                 closedPopup = true

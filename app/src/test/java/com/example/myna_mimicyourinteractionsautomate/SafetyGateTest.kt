@@ -22,7 +22,7 @@ class SafetyGateTest {
     private val zomatoMenu = screen(text("Domino's Pizza"), text("Margherita Pizza"), button("ADD"), button("View Cart"))
     private val amazonCart = screen(text("Shopping Cart"), text("Get 5% back with Amazon Pay UPI"), button("Proceed to checkout"))
     private val amazonPayment = screen(text("Payment"), text("Pay by any UPI App"), text("+ Add a new credit or debit card"),
-        text("Amazon Pay Balance: ₹0.00"), button("Use this payment method"))
+        text("Amazon Pay Balance: ₹0.00"), UiNode(cls = "RadioButton", clickable = true), button("Use this payment method"))
     private val otpScreen = screen(text("Enter the 6-digit code sent to +91 98xxx"), field("Enter OTP"), button("Verify"))
     private val loginScreen = screen(field("Mobile number"), button("Continue with Phone Number"))
 
@@ -40,6 +40,9 @@ class SafetyGateTest {
     @Test fun letsNormalShoppingScreensThrough() {
         assertNull(SafetyGate.check(zomatoMenu, "com.application.zomato"))
         assertNull(SafetyGate.check(amazonCart, "in.amazon.mShop.android.shopping"))          // one UPI offer ≠ payment screen
+        // 23 Sep false alarm: Amazon's cart shows card offers + Pay balance.
+        assertNull(SafetyGate.check(screen(text("Shopping Cart"), text("10% off with HDFC credit card"), text("Amazon Pay Balance: ₹0"),
+            button("Proceed to Buy (1 item)")), "in.amazon.mShop.android.shopping"))
         assertNull(SafetyGate.check(screen(field("Search for restaurant, item or more")), "com.application.zomato"))
         assertNull(SafetyGate.check(screen(text("Sign in for the best experience"), button("Sign in")), "x"))  // banner, no form
     }

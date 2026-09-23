@@ -37,7 +37,7 @@ object SafetyGate {
         "^(log ?in|sign ?in|login with otp|send otp|get otp|request otp|verify( otp)?|continue with (google|email|phone|mobile)( number)?)$",
         RegexOption.IGNORE_CASE)
 
-    /** Payment-method categories; ≥2 visible at once = a payment screen. */
+    /** Payment-method categories; ≥3 visible (or 2 + radio buttons) = a payment screen. */
     private val PAY_METHODS = listOf(
         "upi" to Regex("\\bupi\\b", RegexOption.IGNORE_CASE),
         "card" to Regex("\\b(credit|debit) card|\\bcards?\\b", RegexOption.IGNORE_CASE),
@@ -61,7 +61,10 @@ object SafetyGate {
 
         val texts = visible.mapNotNull { it.label }
         val methods = PAY_METHODS.filter { (_, re) -> texts.any { re.containsMatchIn(it) } }.map { it.first }
-        if (methods.size >= 2) return Block(Kind.PAYMENT, "payment options on screen (${methods.joinToString()})")
+        // Carts advertise "credit card offers" + "Pay balance" (2 kinds): not a payment screen. Real ones list
+        // ≥3 kinds (Zomato: UPI, card, wallet; Amazon: +netbanking, COD, EMI), or 2 with radio buttons to pick one.
+        val radios = visible.any { it.cls?.contains("Radio") == true }
+        if (methods.size >= 3 || (methods.size >= 2 && radios)) return Block(Kind.PAYMENT, "payment options on screen (${methods.joinToString()})")
 
         if (visible.any { it.editable } && visible.any { it.clickable && it.label?.let(LOGIN_BUTTON::matches) == true })
             return Block(Kind.LOGIN, "login screen")

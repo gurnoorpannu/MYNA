@@ -34,7 +34,9 @@ object Compiler {
     data class Result(val recipe: Recipe, val removed: List<String>, val questions: List<String>)
 
     private val STOP = setOf("a", "an", "the", "on", "from", "in", "at", "to", "for", "of", "me", "my", "and", "please",
-        "order", "get", "buy", "search", "find", "add", "open", "show", "book", "some", "one", "with", "using", "via")
+        "order", "get", "buy", "search", "find", "add", "open", "show", "book", "some", "one", "with", "using", "via",
+        // app furniture, not things the user would change
+        "cart", "basket", "bag", "checkout", "app", "page", "screen", "button", "list", "wishlist", "account")
 
     fun words(utterance: String): List<String> = utterance.split(Regex("\\s+")).map { it.trim(',', '.', '!', '?') }.filter { it.isNotEmpty() }
 
