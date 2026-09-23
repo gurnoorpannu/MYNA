@@ -23,6 +23,7 @@ data class Recipe(
     val id: String,
     val app: String,                                  // package name
     val utterance: String,                            // the command said at teach time
+    val summary: String? = null,                      // "order {item} from {restaurant} on Zomato"
     val paraphrases: List<String> = emptyList(),
     val slots: Map<String, Slot> = emptyMap(),
     val defaults: Map<String, String> = emptyMap(),   // habit defaults: tapped but not said ("size" → "Regular")
@@ -92,7 +93,11 @@ data class Target(
 )
 
 @Serializable
-data class UniqueKey(val by: KeyKind, val value: String)
+data class UniqueKey(
+    val by: KeyKind,
+    val value: String,
+    val loose: Boolean = false,   // a blank ("{item}"): "Farmhouse" matches the card "Farmhouse Pizza"
+)
 
 @Serializable
 enum class KeyKind {

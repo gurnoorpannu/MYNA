@@ -29,21 +29,37 @@ object Finder {
 
     private fun byKey(root: UiNode, t: Target): Found? {
         val key = t.key ?: return null
-        val hits: List<UiNode> = when (key.by) {
-            KeyKind.LABEL -> visible(root).filter { it.label?.let(::norm) == key.value }.toList()
+        fun hitsFor(same: (String) -> Boolean): List<UiNode> = when (key.by) {
+            KeyKind.LABEL, KeyKind.OCR -> visible(root).filter { it.label?.let { l -> same(norm(l)) } == true }.toList()
             KeyKind.ID -> visible(root).filter { it.id == key.value }.toList()
-            KeyKind.CHILD_TEXT -> visible(root).filter { it.clickable && it.walk().any { c -> c.label?.let(::norm) == key.value } }.toList()
+            KeyKind.CHILD_TEXT -> visible(root).filter { it.clickable && it.walk().any { c -> c.label?.let { l -> same(norm(l)) } == true } }.toList()
                 .let { l -> l.filter { n -> l.none { o -> o !== n && o in n.walk().drop(1) } } }   // innermost only
-            KeyKind.NEAR_TEXT -> nearText(root, t, key.value)
-            KeyKind.OCR -> visible(root).filter { it.label?.let(::norm) == key.value }.toList()
+            KeyKind.NEAR_TEXT -> nearText(root, t, same)
             KeyKind.POSITION -> emptyList()
         }
-        return best(hits, t)?.let { Found(tappable(it), 1, "${key.by.name.lowercase()}=${key.value}", hits.size) }
+        var hits = hitsFor { it == key.value }
+        var how = "${key.by.name.lowercase()}=${key.value}"
+        if (hits.isEmpty() && key.loose) {
+            // Blank values are what the user SAID ("Farmhouse"); the screen says "Farmhouse Pizza".
+            val want = Identity.loose(key.value)
+            hits = hitsFor { Identity.loose(it).contains(want) }
+            if (hits.size > 1) hits = hits.sortedBy { n -> anchorText(n, key.by)?.let { a -> (if (Identity.loose(a).startsWith(want)) 0 else 1000) + a.length } ?: 9999 }.take(1)
+            how = "${key.by.name.lowercase()}~${key.value}"
+        }
+        return best(hits, t)?.let { Found(tappable(it), 1, how, hits.size) }
+    }
+
+    /** The text that made [n] match (its own label, or its card's matching text) — for ranking loose matches. */
+    private fun anchorText(n: UiNode, by: KeyKind): String? = when (by) {
+        KeyKind.NEAR_TEXT -> (Identity.listItem(n) ?: n.ancestors().take(3).lastOrNull())?.let(Identity::primaryText)
+        else -> n.label ?: Identity.primaryText(n)
     }
 
     /** "Add" on the card whose text is [anchor]: find the anchor, then the element on the same card. */
-    private fun nearText(root: UiNode, t: Target, anchor: String): List<UiNode> =
-        visible(root).filter { it.label?.let(::norm) == anchor }.flatMap { a ->
+    private fun nearText(root: UiNode, t: Target, anchor: String): List<UiNode> = nearText(root, t) { it == anchor }
+
+    private fun nearText(root: UiNode, t: Target, same: (String) -> Boolean): List<UiNode> =
+        visible(root).filter { it.label?.let { l -> same(norm(l)) } == true }.flatMap { a ->
             val card = Identity.listItem(a) ?: a.ancestors().take(3).lastOrNull() ?: return@flatMap emptyList()
             card.walk().filter { it !== a && it.visible && sameKind(it, t) }.toList()
         }.toList()

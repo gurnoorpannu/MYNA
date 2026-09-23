@@ -39,7 +39,8 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
     private fun t(s: String, top: Int = 0) = UiNode(text = s, cls = "TextView", t = top, b = top + 50, r = 500)
     private fun card(dish: String, top: Int) = UiNode(cls = "FrameLayout", t = top, b = top + 300, children = listOf(
         t("In Recommended", top), UiNode(desc = dish, t = top + 5), t(dish, top + 10), t("₹299", top + 60),
-        UiNode(text = "", id = "button_add", cls = "View", clickable = true, t = top + 200, b = top + 250, l = 800, r = 1000)))
+        UiNode(text = "", id = "button_add", cls = "View", clickable = true, t = top + 200, b = top + 250, l = 800, r = 1000),
+        UiNode(text = "ADD", id = "text_view_title", cls = "View", clickable = true, t = top + 200, b = top + 250, l = 600, r = 800)))
 
     private fun build(): UiNode = when (state) {
         "home" -> if (hindi) UiNode(cls = "FrameLayout", b = 2400, children = listOf(
@@ -74,9 +75,12 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
                 UiNode(text = "Not now", cls = "Button", clickable = true, t = 1300, b = 1360)))
         else UiNode(cls = "FrameLayout", b = 2400, children = listOfNotNull(
             UiNode(desc = "Domino's Pizza", id = "title", t = 100, b = 150),
+            UiNode(id = "button1", clickable = true, t = 200, b = 260, children = listOf(t("Search", 210))),
+            if (menuSearch != null) UiNode(id = "edittext", text = "Search in Domino's Pizza", editable = true, clickable = true, t = 300, b = 380) else null,
             UiNode(cls = "RecyclerView", scrollable = true, t = 400, b = 2400, children = listOf(
-                card("Margherita Pizza", 400), card("Farmhouse Pizza", 800), card("Peppy Paneer Pizza", 1200))),
-            if (cart.isNotEmpty()) UiNode(id = "cart_bar", clickable = true, t = 2300, b = 2400, children = listOf(t("View Cart", 2310))) else null))
+                card("Margherita Pizza", 400), card("Farmhouse Pizza", 800), card("Peppy Paneer Pizza", 1200))
+                .filter { c -> menuSearch.isNullOrEmpty() || c.children[2].text!!.lowercase().contains(menuSearch!!.lowercase()) }),
+            if (cart.isNotEmpty()) UiNode(id = "container", clickable = true, t = 2300, b = 2400, children = listOf(t("${cart.size} item added", 2310), t("Continue", 2310))) else null))
         // 23 Sep: a "coupon not applied" pop-up covered the cart right after Continue.
         "coupon" -> UiNode(cls = "FrameLayout", b = 2400, children = listOf(t("Coupon not applied", 900), t("Save ₹50 with HUNGRY50", 960),
             UiNode(text = "Apply coupon", cls = "Button", clickable = true, t = 1100, b = 1160),
@@ -87,7 +91,7 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
     }
 
     override suspend fun screen() = build() to "com.application.zomato"
-    override val actor = GatedActor(click = ::click, setText = { n, s, _ -> typed = s; n.id == "edittext" }, onBlocked = { blocks += it.reason })
+    override val actor = GatedActor(click = ::click, setText = { n, s, _ -> if (state == "menu") menuSearch = s else typed = s; n.id == "edittext" }, onBlocked = { blocks += it.reason })
     override suspend fun launchClean(pkg: String) = true.also { state = "home" }
     override fun key(key: SystemKey) {}
     override fun scroll(list: UiNode, forward: Boolean) = false
@@ -101,6 +105,7 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
     override fun now() = clock.also { clock += 100 }
     override suspend fun pause(ms: Long) { clock += ms; if (userTapsSheet && prompts.isNotEmpty() && state == "sheet" && crust != null) { cart += sheetFor!!; state = "menu" } }
     var couponPopup = false
+    var menuSearch: String? = null    // in-menu search box open (null = closed), with its text
     var ignoresA11yTaps = false       // Zomato's real "Add item": only a finger works
     var userTapsSheet = false
     val prompts = mutableListOf<String>()
@@ -113,15 +118,16 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
             n.label == "Not now" -> popup = false
             n.label == "Order now" || n.label == "Apply coupon" -> error("tapped the pop-up's main action!")
             n.id == "search_edit_text" -> state = "search"
+            n.id == "button1" -> menuSearch = ""
             n.cls == "OcrText" && n.text == "Domino's Pizza" -> state = "results"
             n.id == "top_row" || n.id == "res_card" -> state = "menu"
             n.id == "pizza_hut" -> error("opened the wrong restaurant!")
-            n.id == "button_add" -> { sheetFor = n.parent!!.children[2].text!!; state = "sheet" }
+            n.id == "button_add" || n.id == "text_view_title" -> { sheetFor = n.parent!!.children[2].text!!; state = "sheet" }
             state == "sheet" && n.cls == "ViewGroup" && n.children.firstOrNull()?.text != null && n.t in 900..1100 -> crust = n.children[0].text
             // Add item only works once the required crust is chosen.
             (n.cls == "OcrText" && n.text!!.startsWith("Add item")) || (state == "sheet" && n.l == 360 && n.t == 2025) ->
                 if (crust != null && !ignoresA11yTaps) { cart += sheetFor!!; state = "menu" }
-            n.id == "cart_bar" -> state = if (couponPopup) "coupon" else "cart"
+            n.id == "container" -> state = if (couponPopup) "coupon" else "cart"
             n.id == "coupon_close" -> state = "cart"
             n.id == "cv_checkout_container" -> error("tapped Place Order!")
         }
@@ -142,7 +148,7 @@ class ExecutorTest {
                 target = Target(label = "Restaurant name or a dish...", id = "edittext", key = UniqueKey(KeyKind.ID, "edittext"))),
             step(StepType.TAP, Target(id = "button_add", cls = "View", key = UniqueKey(KeyKind.NEAR_TEXT, "{item}"))),
             Step(StepType.GOAL, goal = "confirm_sheet", args = mapOf("choices" to "New Hand Tossed | Regular")),
-            step(StepType.TAP, Target(id = "cart_bar", key = UniqueKey(KeyKind.CHILD_TEXT, "View Cart"))),
+            step(StepType.TAP, Target(id = "container", key = UniqueKey(KeyKind.CHILD_TEXT, "Continue"))),
         ))))
     private val demo = mapOf("restaurant" to "Domino's", "restaurant_name" to "Domino's Pizza", "item" to "Margherita Pizza")
 
