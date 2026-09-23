@@ -218,6 +218,8 @@ class Executor(
             val rows = matches.filter { Identity.listItem(it) != null }.sortedWith(
                 compareBy({ if (Identity.loose(it.label!!) == want) 0 else 1 }, { it.t }))
             val heading = matches.any { Identity.listItem(it) == null }
+            // Arrived: after at least one hop, the page names the pick as a heading (other "Domino's…" rows don't matter).
+            if (heading && hop > 0) { sl.status = "ok"; sl.note = "opened \"$pick\" after $hop tap(s)"; return }
             val tapTarget = rows.firstOrNull()?.let(Finder::tappable)
                 ?: if (heading && hop > 0) null else ocrFind(com.example.myna_mimicyourinteractionsautomate.recipe.Target(label = pick))
             if (tapTarget == null) {

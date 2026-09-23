@@ -187,6 +187,8 @@ class MynaService : AccessibilityService(), Device {
         inferMissedTap(rec, root, pkg)
         rec.onTap(Identity.target(node, root, rec.spoken), screenOf(root, pkg))
         updateOverlay()
+        // Pages with autoplay video never "settle": look once anyway, so an options sheet that opened gets seen.
+        main.postDelayed({ if (recorder === rec) captureFront()?.first?.let { if (Identity.isModal(it)) sheetChoices += Identity.selectedOptions(it) } }, 1_200)
     }
 
     /** [eventText] = the event's own copy of the new text; Zomato's field value stays the placeholder while typing. */
