@@ -186,6 +186,11 @@ object Identity {
      * "Add to cart" → "Added to cart". Null unless one candidate clearly wins.
      */
     fun inferByDiff(prev: UiNode, next: UiNode): UiNode? {
+        // Shopping: the cart count went up ("Cart 1 item" → "Cart 2 items", "1 in cart") → it was "Add to cart/bag".
+        if (cartCount(next) > cartCount(prev) || next.walk().any { it.visible && it.label?.let(ADDED::containsMatchIn) == true &&
+                prev.walk().none { p -> p.visible && p.label == it.label } }) {
+            prev.walk().firstOrNull { it.visible && it.clickable && (it.label ?: primaryText(it))?.let(ADD_BTN::containsMatchIn) == true }?.let { return it }
+        }
         val before = prev.walk().filter { it.visible }.mapNotNull { it.label?.let(::norm) }.toSet()
         val fresh = next.walk().filter { it.visible && !it.editable }.mapNotNull { it.label?.let(::norm) }.filter { it !in before }.map(::stems).toList()
         if (fresh.isEmpty()) return null
@@ -198,6 +203,16 @@ object Identity {
         val top = scored.firstOrNull() ?: return null
         return top.first.takeIf { scored.getOrNull(1)?.second != top.second }
     }
+
+    private val ADD_BTN = Regex("^add to (cart|bag|basket|order)\\b", RegexOption.IGNORE_CASE)
+    private val ADDED = Regex("\\b(\\d+ in (cart|bag|basket)|added to (cart|bag|basket))\\b", RegexOption.IGNORE_CASE)
+    private val CART_WORD = Regex("\\b(cart|bag|basket)\\b", RegexOption.IGNORE_CASE)
+
+    /** Biggest number shown next to the word cart/bag/basket ("Cart 1 item Tab 4 of 6" → 1; tab positions ignored). */
+    fun cartCount(root: UiNode): Int = root.walk().filter { it.visible }.mapNotNull { it.label }
+        .filter(CART_WORD::containsMatchIn)
+        .mapNotNull { Regex("\\d+").findAll(it.replace(Regex("tab \\d+ of \\d+", RegexOption.IGNORE_CASE), "")).map { m -> m.value.toInt() }.maxOrNull() }
+        .maxOrNull() ?: 0
 
     /** A clickable, non-editable element that says "search" (label, id or description). */
     fun searchBar(root: UiNode): UiNode? = root.walk().firstOrNull { n ->

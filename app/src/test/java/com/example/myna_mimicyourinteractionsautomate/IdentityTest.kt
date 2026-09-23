@@ -338,6 +338,16 @@ class DiffInferenceTest {
         assertEquals("Add to cart", Identity.inferByDiff(product, added)?.label)
     }
 
+    @Test fun amazonCartCountGoingUpMeansAddToCart() {
+        // Real 23 Sep Amazon page: button stays, "1 in cart" appears, the Cart tab counts up.
+        val before = UiNode(children = listOf(UiNode(text = "Spigen Case for S25 Ultra"), link("Add to cart", 1500),
+            UiNode(desc = "Cart 0 items Tab 4 of 6", clickable = true)))
+        val after = UiNode(children = listOf(UiNode(text = "Spigen Case for S25 Ultra"), UiNode(text = "1 in cart"), link("Add to cart", 1500),
+            UiNode(desc = "Cart 1 item Tab 4 of 6", clickable = true)))
+        assertEquals(0, Identity.cartCount(before)); assertEquals(1, Identity.cartCount(after))
+        assertEquals("Add to cart", Identity.inferByDiff(before, after)?.label)
+    }
+
     @Test fun nothingNewNothingGuessed() {
         assertEquals(null, Identity.inferByDiff(product, product))
     }
