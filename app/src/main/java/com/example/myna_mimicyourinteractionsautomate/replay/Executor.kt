@@ -312,9 +312,16 @@ class Executor(
             val (root, pkg) = device.screen() ?: throw Stop(Outcome.FAILED, "screen unreadable")
             SafetyGate.check(root, pkg)?.let { device.actor.handOff(it); throw Stop(Outcome.HANDED_OFF, it.reason) }
             if (!Identity.isModal(root)) { sl.status = "ok"; if (attempt == 0) sl.note = "no sheet open"; return }
-            // Tree position first (exact), OCR second (reads pixels, can lag an animation).
-            val box = Identity.blankSheetButton(root)
-            val line = if (box != null) null else device.ocr().filter { it.t >= root.t + (root.b - root.t) * 3 / 4 && CONFIRM.containsMatchIn(it.text) }.maxByOrNull { it.r - it.l }
+            // A labelled button first ("Add item", or "I'll choose" / "Repeat" on a repeat-customisation sheet),
+            // then the blank drawn button (exact tree position), then OCR (pixels, can lag an animation).
+            val sheet = Identity.sheetRoot(root)   // never the menu's own "ADD" buttons under the sheet
+            val labelled = SHEET_BUTTONS.firstNotNullOfOrNull { re ->
+                sheet.walk().firstOrNull { it.visible && it.clickable && it.walk().any { c -> c.label?.let(re::containsMatchIn) == true } }
+            }
+            val box = labelled ?: Identity.blankSheetButton(root)
+            val line = if (box != null) null else device.ocr().filter { it.t >= sheet.t }.let { lines ->
+                SHEET_BUTTONS.firstNotNullOfOrNull { re -> lines.filter { re.containsMatchIn(it.text) }.maxByOrNull { it.r - it.l } }
+            }
             val target = box ?: line?.let { UiNode(text = it.text, cls = "OcrText", clickable = true, l = it.l, t = it.t, r = it.r, b = it.b) }
                 ?: throw Stop(Outcome.STUCK, "couldn't find the button that confirms the options sheet")
             sl.level = if (box != null) 2 else 4
@@ -438,7 +445,12 @@ class Executor(
         private val AD = Regex("^(sponsored|ad)\\b|\\bsponsored (ad|information)\\b", RegexOption.IGNORE_CASE)
         const val SHEET_ANIMATION_MS = 800L
         const val USER_TAP_WAIT_MS = 30_000L
-        private val CONFIRM = Regex("^(add item|add to cart|add|done|confirm|continue|save|apply|update)\\b", RegexOption.IGNORE_CASE)
+        /** Sheet buttons in order of preference: confirm → pick options fresh (demo defaults) → repeat last time. */
+        private val SHEET_BUTTONS = listOf(
+            Regex("^(add item|add to cart|add|done|confirm|continue|save|apply|update)\\b", RegexOption.IGNORE_CASE),
+            Regex("^(i.ll choose|choose|add new|customi[sz]e)\\b", RegexOption.IGNORE_CASE),
+            Regex("^(repeat)\\b", RegexOption.IGNORE_CASE),
+        )
         private val CHECKOUT = Regex("^(view cart|go to cart|checkout|proceed to checkout|proceed to buy|continue to checkout|continue)\\b", RegexOption.IGNORE_CASE)
         const val SAME_SCREEN_LIMIT = 3 + MAX_SCROLLS + 2   // scrolls/pop-up retries legitimately revisit a screen
         private val OCR_KEYS = setOf(KeyKind.OCR, KeyKind.LABEL, KeyKind.CHILD_TEXT, KeyKind.NEAR_TEXT)

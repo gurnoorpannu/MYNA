@@ -161,6 +161,12 @@ object Identity {
         n.visible && n.checkable && optionRow(n)?.let(::primaryText)?.let(::norm) == norm(title)
     }
 
+    /** The open sheet itself (Material's design_bottom_sheet, else the scrim's window), so the menu under it is ignored. */
+    fun sheetRoot(root: UiNode): UiNode =
+        root.walk().firstOrNull { it.visible && it.id == "design_bottom_sheet" }
+            ?: root.walk().firstOrNull { it.visible && it.id == "touch_outside" }?.parent
+            ?: root
+
     /**
      * The sheet's main button when it has no text (Zomato's "Add item ₹109" is a blank ViewGroup the app draws on):
      * the widest non-clickable, text-less box inside a "*button*" container in the bottom quarter.

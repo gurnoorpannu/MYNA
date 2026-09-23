@@ -507,7 +507,8 @@ class MynaService : AccessibilityService(), Device {
             hideRunOverlay()
             running = false
             onDone(logs)
-            if (logs.lastOrNull()?.outcome != Outcome.HANDED_OFF) {
+            // Stuck/handed off: leave the app on screen so the user sees where and can take over.
+            if (logs.lastOrNull()?.outcome in setOf(Outcome.DONE, Outcome.STOPPED)) {
                 startActivity(Intent(this@MynaService, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
             }
         }
