@@ -246,3 +246,20 @@ class HomeToSearchTest {
         assertEquals(null, Identity.inferTap(home, noField))
     }
 }
+
+
+class AddLabelTest {
+    // 23 Sep: user tapped the "ADD" text itself; it was unique after searching, and the item link got lost.
+    @Test fun addTextOnNamedCardStillAnchorsOnTheDish() {
+        val card = UiNode(cls = "FrameLayout", t = 500, b = 800, children = listOf(
+            UiNode(text = "Margherita Pizza", t = 510, b = 560), UiNode(text = "ADD", id = "text_view_title", clickable = true, t = 700, b = 750)))
+        val root = UiNode(b = 2400, children = listOf(UiNode(cls = "RecyclerView", scrollable = true, t = 500, b = 2400, children = listOf(card))))
+        val k = Identity.target(card.children[1], root, setOf("margherita", "pizza")).key!!
+        assertEquals(KeyKind.NEAR_TEXT, k.by); assertEquals("Margherita Pizza", k.value)
+    }
+
+    @Test fun resultsPageShowsQuery() {
+        assertTrue(Identity.showsQuery(UiNode(children = listOf(UiNode(text = "dominos"))), "dominos"))
+        assertEquals(false, Identity.showsQuery(UiNode(children = listOf(UiNode(text = "Search in Domino's Pizza"))), "dominos"))
+    }
+}

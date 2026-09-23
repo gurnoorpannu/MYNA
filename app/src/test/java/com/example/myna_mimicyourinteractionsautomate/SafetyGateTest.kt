@@ -53,7 +53,7 @@ class SafetyGateTest {
 
     @Test fun gatedActorNeverClicksOrTypesWhenBlocked() {
         var clicks = 0; var typed = 0; val blocks = mutableListOf<SafetyGate.Block>()
-        val actor = GatedActor({ clicks++; true }, { _, _ -> typed++; true }, { blocks += it })
+        val actor = GatedActor({ clicks++; true }, { _, _, _ -> typed++; true }, { blocks += it })
         val placeOrder = zomatoCart.walk().first { it.id == "cv_checkout_container" }
         val otp = otpScreen.walk().first { it.editable }
 

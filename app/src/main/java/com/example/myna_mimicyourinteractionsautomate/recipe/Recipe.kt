@@ -65,6 +65,7 @@ data class Step(
     val pkg: String? = null,
     val key: SystemKey? = null,
     val text: String? = null,                         // may contain "{slot}"
+    val submit: Boolean = false,                      // TYPE: press the keyboard's Enter/search key after typing
     val target: Target? = null,
     val goal: String? = null,                         // "set_qty", "pick_address", "search"
     val args: Map<String, String> = emptyMap(),       // {"n": "{qty}"}

@@ -43,10 +43,11 @@ object Identity {
             .filter { isStable(it) && onlyInAnchor(it) }
             .sortedByDescending { t -> spoken.any { w -> t.contains(w, ignoreCase = true) } }
         val spokenAnchor = nearby.firstOrNull { t -> spoken.any { w -> t.contains(w, ignoreCase = true) } }
+        val labelIsSpoken = label != null && spoken.any { w -> label.contains(w, ignoreCase = true) }
         return when {
+            // "ADD" on the card the user named: keep that link even if "ADD"/the id happen to be unique right now.
+            spokenAnchor != null && !labelIsSpoken && !n.editable && listItem(n) != null -> UniqueKey(KeyKind.NEAR_TEXT, norm(spokenAnchor))
             label != null && !n.editable && unique(label) -> UniqueKey(KeyKind.LABEL, norm(label))
-            // "Add" on the card the user named: keep that link even if the id happens to be unique right now.
-            spokenAnchor != null && !n.editable && listItem(n) != null -> UniqueKey(KeyKind.NEAR_TEXT, norm(spokenAnchor))
             n.id != null && isStableId(n.id) && visible.count { it.id == n.id } == 1 -> UniqueKey(KeyKind.ID, n.id)
             // Prefer "Continue" over "2 items added": counts change between runs.
             else -> subTexts.filter { unique(it) && isStable(it) }.minByOrNull { it.count(Char::isDigit) }?.let { UniqueKey(KeyKind.CHILD_TEXT, norm(it)) }
@@ -136,6 +137,10 @@ object Identity {
         val best = matching.distinctBy { it.second }.maxByOrNull { it.second.length } ?: return null
         return best.first.takeIf { matching.count { it.second == best.second } == 1 && prevTexts.isNotEmpty() }
     }
+
+    /** After a keyboard search, the results page still shows the query (in its search box or header). */
+    fun showsQuery(root: UiNode, query: String): Boolean =
+        root.walk().any { it.visible && it.label?.let { l -> loose(l) == loose(query) } == true }
 
     /** A clickable, non-editable element that says "search" (label, id or description). */
     fun searchBar(root: UiNode): UiNode? = root.walk().firstOrNull { n ->

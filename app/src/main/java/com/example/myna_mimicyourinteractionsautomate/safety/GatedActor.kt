@@ -9,7 +9,7 @@ import com.example.myna_mimicyourinteractionsautomate.screen.UiNode
  */
 class GatedActor(
     private val click: (UiNode) -> Boolean,
-    private val setText: (UiNode, String) -> Boolean,
+    private val setText: (UiNode, String, Boolean) -> Boolean,   // (field, text, press Enter after)
     private val onBlocked: (SafetyGate.Block) -> Unit,
 ) {
     sealed interface Result {
@@ -26,8 +26,8 @@ class GatedActor(
         return if (click(target)) Result.Done else Result.Failed
     }
 
-    fun type(target: UiNode, text: String, root: UiNode, pkg: String?): Result {
+    fun type(target: UiNode, text: String, root: UiNode, pkg: String?, submit: Boolean = false): Result {
         SafetyGate.checkTap(target, root, pkg)?.let { onBlocked(it); return Result.Blocked(it) }
-        return if (setText(target, text)) Result.Done else Result.Failed
+        return if (setText(target, text, submit)) Result.Done else Result.Failed
     }
 }

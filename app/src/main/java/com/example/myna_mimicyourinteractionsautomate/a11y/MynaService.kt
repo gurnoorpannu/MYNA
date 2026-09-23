@@ -230,7 +230,9 @@ class MynaService : AccessibilityService(), Device {
             // After typing, the pick must match the query ("dominos" → "Domino's Pizza", not "Pizza Bite House").
             val query = rec.lastTyped
             val tapped = Identity.inferTap(prev.first, root, query)
-            if (tapped != null) {
+            if (query != null && tapped == null && Identity.showsQuery(root, query)) {
+                rec.markSubmit()   // results page still shows the query → keyboard Enter, not a tap
+            } else if (tapped != null) {
                 rec.onInferredTap(Identity.target(tapped, prev.first, rec.spoken), prev.second)
             } else {
                 // List invisible to accessibility (Compose): name the pick from the new screen; replay finds it by OCR.
@@ -352,10 +354,13 @@ class MynaService : AccessibilityService(), Device {
     }
 
     /** Only called by [actor], after the gate said yes. */
-    private fun setNodeText(n: UiNode, text: String): Boolean {
+    private fun setNodeText(n: UiNode, text: String, submit: Boolean): Boolean {
         val live = n.live as? AccessibilityNodeInfo ?: return false
         val args = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text) }
-        return live.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        if (!live.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return false
+        if (!submit) return true
+        Thread.sleep(400)   // let the app's text watcher run before submitting
+        return live.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
     }
 
     private fun showOverlay() {

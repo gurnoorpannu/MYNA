@@ -38,6 +38,12 @@ class Recorder(
     fun onInferredTap(target: Target, screen: Screen) =
         add(Step(StepType.TAP, target = target, screen = screen, why = "inferred: app sent no click event"))
 
+    /** The user pressed Enter/search on the keyboard after typing (no event for that — inferred from the next screen). */
+    fun markSubmit() {
+        val i = steps.lastIndex
+        if (i >= 0 && steps[i].type == StepType.TYPE) steps[i] = steps[i].copy(submit = true)
+    }
+
     /** The query typed just before, if the last step was typing — used to name a picked search result. */
     val lastTyped: String? get() = steps.lastOrNull()?.takeIf { it.type == StepType.TYPE }?.text
 
@@ -92,7 +98,7 @@ fun Step.describe(): String {
     val what = when (type) {
         StepType.LAUNCH -> "open $pkg"
         StepType.KEY -> "press ${key?.name?.lowercase()}"
-        StepType.TYPE -> "type \"$text\" into ${target?.label ?: target?.id ?: "field"}"
+        StepType.TYPE -> "type \"$text\" into ${target?.label ?: target?.id ?: "field"}" + if (submit) " + Enter" else ""
         StepType.TAP -> "tap " + (target?.label ?: target?.key?.value ?: "?") +
             (target?.key?.takeIf { it.value != target.label }?.let { " (${it.by.name.lowercase()}: ${it.value})" } ?: "")
         StepType.GOAL -> "$goal $args"

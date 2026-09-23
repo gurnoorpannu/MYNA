@@ -64,7 +64,7 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
     }
 
     override suspend fun screen() = build() to "com.application.zomato"
-    override val actor = GatedActor(click = ::click, setText = { n, s -> typed = s; n.id == "edittext" }, onBlocked = { blocks += it.reason })
+    override val actor = GatedActor(click = ::click, setText = { n, s, _ -> typed = s; n.id == "edittext" }, onBlocked = { blocks += it.reason })
     override suspend fun launchClean(pkg: String) = true.also { state = "home" }
     override fun key(key: SystemKey) {}
     override fun scroll(list: UiNode, forward: Boolean) = false

@@ -116,7 +116,7 @@ class Executor(
                     if (ok != "Yes") throw Stop(Outcome.STUCK, "you said no to \"$risky\"")
                 }
                 val text = Slots.fill(step.text, slots)
-                val r = if (step.type == StepType.TYPE) device.actor.type(found.node, text.orEmpty(), root, pkg)
+                val r = if (step.type == StepType.TYPE) device.actor.type(found.node, text.orEmpty(), root, pkg, step.submit)
                         else device.actor.tap(found.node, root, pkg)
                 when (r) {
                     GatedActor.Result.Done -> { verify(step, sl); sl.status = "ok"; return }
