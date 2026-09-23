@@ -95,7 +95,11 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
     override suspend fun ask(question: String, options: List<String>): String? = null
     override fun say(text: String) {}
     override fun now() = clock.also { clock += 100 }
-    override suspend fun pause(ms: Long) { clock += ms }
+    override suspend fun pause(ms: Long) { clock += ms; if (userTapsSheet && prompts.isNotEmpty() && state == "sheet" && crust != null) { cart += sheetFor!!; state = "menu" } }
+    var ignoresA11yTaps = false       // Zomato's real "Add item": only a finger works
+    var userTapsSheet = false
+    val prompts = mutableListOf<String>()
+    override fun prompt(text: String?) { text?.let { prompts += it } }
     override val stopRequested = false
 
     private fun click(n: UiNode): Boolean {
@@ -111,7 +115,7 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
             state == "sheet" && n.cls == "ViewGroup" && n.children.firstOrNull()?.text != null && n.t in 900..1100 -> crust = n.children[0].text
             // Add item only works once the required crust is chosen.
             (n.cls == "OcrText" && n.text!!.startsWith("Add item")) || (state == "sheet" && n.l == 360 && n.t == 2025) ->
-                if (crust != null) { cart += sheetFor!!; state = "menu" }
+                if (crust != null && !ignoresA11yTaps) { cart += sheetFor!!; state = "menu" }
             n.id == "cart_bar" -> state = "cart"
             n.id == "cv_checkout_container" -> error("tapped Place Order!")
         }
@@ -154,6 +158,14 @@ class ExecutorTest {
         val log = Executor(z).run(short, demo)
         assertEquals(log.reason, Outcome.HANDED_OFF, log.outcome)
         assertTrue(log.steps.last().note == "towards checkout")
+    }
+
+    @Test fun sheetThatIgnoresOurTapsAsksTheUserThenContinues() = runBlocking {
+        val z = FakeZomato().apply { ignoresA11yTaps = true; userTapsSheet = true }
+        val log = Executor(z).run(recipe, demo)
+        assertEquals(log.reason, Outcome.HANDED_OFF, log.outcome)
+        assertEquals(listOf("Margherita Pizza"), z.cart)
+        assertTrue(z.prompts.single().contains("tap"))
     }
 
     @Test fun changedItemAddsFarmhouse() = runBlocking {

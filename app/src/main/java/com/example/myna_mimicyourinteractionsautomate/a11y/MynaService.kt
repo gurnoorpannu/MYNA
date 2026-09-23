@@ -529,6 +529,26 @@ class MynaService : AccessibilityService(), Device {
 
     override suspend fun pause(ms: Long) = delay(ms)
 
+    private var promptView: TextView? = null
+
+    override fun prompt(text: String?) {
+        promptView?.let { getSystemService(WindowManager::class.java).removeView(it) }
+        promptView = null
+        if (text == null) return
+        say(text)
+        val v = TextView(this).apply {
+            this.text = "👆 $text"; textSize = 18f; setTextColor(Color.WHITE)
+            setBackgroundColor(0xE61A73E8.toInt()); setPadding(48, 36, 48, 36)
+        }
+        // Top of the screen and not touchable: it must never cover or intercept the button the user is asked to tap.
+        getSystemService(WindowManager::class.java).addView(v, WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE, PixelFormat.TRANSLUCENT,
+        ).apply { gravity = Gravity.TOP; y = 100 })
+        promptView = v
+    }
+
     fun requestStop() { stopRequested = true }
 
     private fun showRunOverlay() {
@@ -562,9 +582,26 @@ class MynaService : AccessibilityService(), Device {
                             "sheetButton=${Identity.blankSheetButton(root)?.bounds} gate=${SafetyGate.check(root, pkg)}\n" + debugTree(root))
                         Log.i(TAG, "debug dump → $f")
                     }
-                    "tap" -> {
+                    "tap" -> {   // bypasses the gate on purpose: dev only, adb only
+                        val x = i.getIntExtra("x", 0).toFloat(); val y = i.getIntExtra("y", 0).toFloat()
+                        val dur = i.getIntExtra("dur", 80).toLong(); val move = i.getIntExtra("move", 0)
+                        val path = Path().apply { moveTo(x, y); if (move > 0) lineTo(x + move, y) }
+                        dispatchGesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, dur)).build(),
+                            object : GestureResultCallback() {
+                                override fun onCompleted(g: GestureDescription) { Log.d(TAG, "debug tap ($x,$y) dur=$dur move=$move completed") }
+                                override fun onCancelled(g: GestureDescription) { Log.w(TAG, "debug tap CANCELLED") }
+                            }, null)
+                    }
+                    "click" -> {   // ACTION_CLICK on the deepest node at (x,y), then each ancestor until one accepts
                         val x = i.getIntExtra("x", 0); val y = i.getIntExtra("y", 0)
-                        clickNode(UiNode(l = x, t = y, r = x, b = y))   // bypasses the gate on purpose: dev only, adb only
+                        val root = captureFront()?.first ?: return
+                        val hit = root.walk().filter { it.visible && x in it.l..it.r && y in it.t..it.b }.minByOrNull { (it.r - it.l) * (it.b - it.t) } ?: return
+                        (hit.live as? AccessibilityNodeInfo)?.performAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS)
+                        for (n in sequenceOf(hit) + hit.ancestors()) {
+                            val ok = (n.live as? AccessibilityNodeInfo)?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
+                            Log.d(TAG, "debug click on $n ${n.bounds} → $ok")
+                            if (ok) break
+                        }
                     }
                 }
             }

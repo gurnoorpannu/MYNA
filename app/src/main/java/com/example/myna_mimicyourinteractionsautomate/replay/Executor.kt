@@ -27,6 +27,8 @@ interface Device {
     fun say(text: String)
     fun now(): Long
     suspend fun pause(ms: Long)
+    /** Spoken request + top banner asking the user to do one thing by hand; null clears it. */
+    fun prompt(text: String?)
     val stopRequested: Boolean
 }
 
@@ -233,8 +235,20 @@ class Executor(
             sl.note = "pressed ${line?.text?.let { "\"$it\"" } ?: "the sheet's main button ${box!!.bounds}"} (try ${attempt + 1})"
             if (device.actor.tap(target, root, pkg) is GatedActor.Result.Blocked) throw Stop(Outcome.HANDED_OFF, "blocked on the options sheet")
             device.pause(SHEET_ANIMATION_MS)
+            if (attempt >= 1) break   // two tries: some apps (Zomato's "Add item") ignore accessibility taps entirely
         }
-        throw Stop(Outcome.STUCK, "the options sheet didn't close")
+        // Ask for one finger tap instead of guessing further, then carry on once the sheet closes.
+        device.prompt("Please tap the add button on the sheet. This app only accepts your finger there.")
+        try {
+            val deadline = device.now() + USER_TAP_WAIT_MS
+            while (device.now() < deadline) {
+                if (device.stopRequested) throw Stop(Outcome.STOPPED, "stopped by user")
+                val (root, _) = device.screen() ?: continue
+                if (!Identity.isModal(root)) { sl.status = "ok"; sl.note = "you tapped the sheet's add button (the app ignores accessibility taps there)"; return }
+                device.pause(500)
+            }
+        } finally { device.prompt(null) }
+        throw Stop(Outcome.STUCK, "the options sheet needs your tap and nobody tapped it within ${USER_TAP_WAIT_MS / 1000} seconds")
     }
 
     /** Habit defaults: make the sheet show the same options as the demo (required groups block "Add item" otherwise). */
@@ -298,6 +312,7 @@ class Executor(
     companion object {
         const val MAX_SCROLLS = 5
         const val SHEET_ANIMATION_MS = 800L
+        const val USER_TAP_WAIT_MS = 30_000L
         private val CONFIRM = Regex("^(add item|add to cart|add|done|confirm|continue|save|apply|update)\\b", RegexOption.IGNORE_CASE)
         private val CHECKOUT = Regex("^(view cart|go to cart|checkout|proceed to checkout|proceed to buy|continue to checkout|continue)\\b", RegexOption.IGNORE_CASE)
         const val SAME_SCREEN_LIMIT = 3 + MAX_SCROLLS + 2   // scrolls/pop-up retries legitimately revisit a screen
