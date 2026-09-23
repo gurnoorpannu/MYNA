@@ -3,151 +3,445 @@ package com.example.myna_mimicyourinteractionsautomate
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import android.speech.RecognizerIntent
-import androidx.compose.material3.IconButton
+import android.text.format.DateUtils
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.myna_mimicyourinteractionsautomate.a11y.MynaService
-import com.example.myna_mimicyourinteractionsautomate.llm.Llm
 import com.example.myna_mimicyourinteractionsautomate.intent.IntentMatcher
-import com.example.myna_mimicyourinteractionsautomate.replay.Slots
-import androidx.compose.runtime.mutableStateListOf
-import com.example.myna_mimicyourinteractionsautomate.recipe.RecipeJson
+import com.example.myna_mimicyourinteractionsautomate.llm.Llm
 import com.example.myna_mimicyourinteractionsautomate.recipe.Recipe
+import com.example.myna_mimicyourinteractionsautomate.recipe.RecipeJson
 import com.example.myna_mimicyourinteractionsautomate.recipe.Recipes
 import com.example.myna_mimicyourinteractionsautomate.recipe.Recording
-import com.example.myna_mimicyourinteractionsautomate.replay.RunLog
 import com.example.myna_mimicyourinteractionsautomate.record.describe
+import com.example.myna_mimicyourinteractionsautomate.replay.Outcome
+import com.example.myna_mimicyourinteractionsautomate.replay.RunLog
+import com.example.myna_mimicyourinteractionsautomate.replay.Slots
+import com.example.myna_mimicyourinteractionsautomate.ui.AppBadge
+import com.example.myna_mimicyourinteractionsautomate.ui.AutomationCard
+import com.example.myna_mimicyourinteractionsautomate.ui.Bubble
+import com.example.myna_mimicyourinteractionsautomate.ui.MicHero
+import com.example.myna_mimicyourinteractionsautomate.ui.SectionTitle
+import com.example.myna_mimicyourinteractionsautomate.ui.StatusPill
+import com.example.myna_mimicyourinteractionsautomate.ui.StepRow
+import com.example.myna_mimicyourinteractionsautomate.ui.theme.Beak
+import com.example.myna_mimicyourinteractionsautomate.ui.theme.BeakSoft
+import com.example.myna_mimicyourinteractionsautomate.ui.theme.Card
+import com.example.myna_mimicyourinteractionsautomate.ui.theme.Ink
+import com.example.myna_mimicyourinteractionsautomate.ui.theme.InkSoft
+import com.example.myna_mimicyourinteractionsautomate.ui.theme.Line
 import com.example.myna_mimicyourinteractionsautomate.ui.theme.MYNAMimicYourINteractionsAutomateTheme
+import com.example.myna_mimicyourinteractionsautomate.ui.theme.Warn
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.File
 
 class MainActivity : ComponentActivity() {
 
+    private enum class Tab(val label: String, val icon: String) { HOME("Home", "🏠"), TEACH("Teach", "🎓"), HISTORY("History", "🕘") }
+
+    private var tab by mutableStateOf(Tab.HOME)
     private var serviceOn by mutableStateOf(false)
     private var lastRecording by mutableStateOf<Recording?>(null)
     private var recipes by mutableStateOf<List<Recipe>>(emptyList())
-    private var lastRun by mutableStateOf<RunLog?>(null)
+    private var runs by mutableStateOf<List<RunLog>>(emptyList())
     private var teachUtterance by mutableStateOf("Order a Margherita pizza from Domino's on Zomato")
     private var teachApp by mutableStateOf(APPS[0].second)
 
-    // --- Ask MYNA (Phase 5): conversation state ---
+    // Sheets
+    private var openRecipe by mutableStateOf<Recipe?>(null)
+    private var openRun by mutableStateOf<RunLog?>(null)
+    private var settingsOpen by mutableStateOf(false)
+
+    // Ask MYNA (Phase 5) conversation state
     private val chat = mutableStateListOf<String>()
     private var pending by mutableStateOf<IntentMatcher.Decision?>(null)
     private var thinking by mutableStateOf(false)
 
     private companion object {
         val PING_SCHEMA = JSONObject("""{"type":"object","required":["reply"],"properties":{"reply":{"type":"string"}}}""")
-        val APPS = listOf("Zomato" to "com.application.zomato", "Amazon" to "in.amazon.mShop.android.shopping")
+        val APPS = listOf("Zomato" to "com.application.zomato", "Amazon" to "in.amazon.mShop.android.shopping",
+            "Myntra" to "com.myntra.android", "Swiggy" to "in.swiggy.android")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
-        setContent {
-            MYNAMimicYourINteractionsAutomateTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { pad ->
-                    Column(
-                        Modifier.padding(pad).padding(16.dp).verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Text("Accessibility service: " + if (serviceOn) "ON" else "OFF")
-                        if (!serviceOn) Button(onClick = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }) {
-                            Text("Open accessibility settings")
-                        }
+        // White design on a dark-mode phone: force dark status/nav icons.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.light(android.graphics.Color.WHITE, android.graphics.Color.WHITE),
+            navigationBarStyle = SystemBarStyle.light(android.graphics.Color.WHITE, android.graphics.Color.WHITE),
+        )
+        setContent { MYNAMimicYourINteractionsAutomateTheme { App() } }
+    }
 
-                        AskCard()
-                        HorizontalDivider()
-                        TeachCard()
-                        lastRecording?.let { RecordingCard(it) }
-                        HorizontalDivider()
-                        RecipesCard()
-                        lastRun?.let { RunCard(it) }
+    // ================================================================= shell
 
-                        HorizontalDivider()
-                        Text("Dev tools", style = MaterialTheme.typography.titleMedium)
-                        var dumping by remember { mutableStateOf(MynaService.dumping) }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Switch(checked = dumping, enabled = serviceOn, onCheckedChange = {
-                                MynaService.dumping = it; dumping = it
-                            })
-                            Text("Dump screen trees", Modifier.padding(start = 8.dp))
-                        }
-                        PingButton()
-                        Text("Files: adb pull /sdcard/Android/data/$packageName/files", style = MaterialTheme.typography.bodySmall)
+    @Composable
+    private fun App() {
+        Scaffold(
+            containerColor = MaterialTheme.colorScheme.background,
+            bottomBar = {
+                NavigationBar(containerColor = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
+                    Tab.entries.forEach { t ->
+                        NavigationBarItem(selected = tab == t, onClick = { tab = t },
+                            icon = { Text(t.icon, fontSize = 20.sp) }, label = { Text(t.label) },
+                            colors = NavigationBarItemDefaults.colors(indicatorColor = BeakSoft, selectedTextColor = Ink))
                     }
+                }
+            },
+        ) { pad ->
+            Box(Modifier.padding(pad).fillMaxSize()) {
+                when (tab) {
+                    Tab.HOME -> HomeScreen()
+                    Tab.TEACH -> TeachScreen()
+                    Tab.HISTORY -> HistoryScreen()
+                }
+            }
+        }
+        openRecipe?.let { RecipeSheet(it) }
+        openRun?.let { RunSheet(it) }
+        if (settingsOpen) SettingsSheet()
+    }
+
+    @Composable
+    private fun Page(content: @Composable () -> Unit) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)) { content() }
+    }
+
+    /** Shown on every screen until the accessibility service is on: without it nothing works. */
+    @Composable
+    private fun ServiceBanner() {
+        if (serviceOn) return
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Warn.copy(alpha = 0.10f)).padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("MYNA needs Accessibility access to see and tap for you.", fontWeight = FontWeight.SemiBold)
+            Button({ startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }, shape = RoundedCornerShape(12.dp)) { Text("Turn it on") }
+        }
+    }
+
+    // ================================================================= Home
+
+    @Composable
+    private fun HomeScreen() = Page {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("MYNA", Modifier.weight(1f), fontWeight = FontWeight.Black, fontSize = 26.sp, letterSpacing = 2.sp)
+            Box(Modifier.size(40.dp).clip(CircleShape).background(Card).border(1.dp, Line, CircleShape).clickable { settingsOpen = true },
+                contentAlignment = Alignment.Center) { Text("👤", fontSize = 18.sp) }
+        }
+        ServiceBanner()
+        AskMyna()
+        val pinned = recipes.filter { it.golden }
+        SectionTitle("Your automations") {
+            if (pinned.size > 1) TextButton({ replay(pinned) }, enabled = serviceOn) { Text("Run all") }
+        }
+        if (pinned.isEmpty()) {
+            Text("Nothing here yet. Teach MYNA a task, then tap “Add to Home”.", color = InkSoft)
+            OutlinedButton({ tab = Tab.TEACH }, shape = RoundedCornerShape(12.dp)) { Text("Teach a task") }
+        }
+        pinned.chunked(2).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                row.forEach { r ->
+                    AutomationCard(title(r), r.app, serviceOn, onRun = { replay(listOf(r)) }, onSteps = { openRecipe = r }, modifier = Modifier.weight(1f))
+                }
+                if (row.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+    }
+
+    /** The recipe's summary with last time's values: "order Margherita from Domino's on Zomato". */
+    private fun title(r: Recipe) = Slots.fill(r.summary ?: r.utterance, r.slots.mapValues { it.value.value ?: it.value.default.orEmpty() })!!
+        .replaceFirstChar { it.uppercase() }
+
+    /** Ask MYNA: tap the mic (or type); MYNA picks the recipe, fills blanks, asks when unsure (T3, T12, T13). */
+    @Composable
+    private fun AskMyna() {
+        val scope = rememberCoroutineScope()
+        var input by remember { mutableStateOf("") }
+        val listen = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+            res.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { heard -> input = ""; scope.launch { onUserSaid(heard) } }
+        }
+        val listenNow = { runCatching { listen.launch(speechIntent(if (pending != null) "Your answer" else "What should I do?")) } }
+        // When MYNA asks something, listen for the reply once it has finished speaking.
+        val asking = pending
+        LaunchedEffect(asking) { if (asking != null) { kotlinx.coroutines.delay(2_500); if (pending === asking) listenNow() } }
+
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            MicHero(busy = thinking || pending != null,
+                caption = when { thinking -> "Thinking…"; pending != null -> "Tap to answer"; else -> "What do you want to do with MYNA today?" },
+                onTap = { listenNow() })
+        }
+        chat.takeLast(4).forEach { Bubble(it.substringAfter(": "), mine = it.startsWith("You")) }
+        // Quick answers for MYNA's questions.
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            (pending as? IntentMatcher.Decision.AskSlot)?.let { q ->
+                Chip("None") { scope.launch { onUserSaid("none") } }
+                q.recipe.slots[q.slot]?.value?.let { last -> Chip("Same ($last)") { scope.launch { onUserSaid("same") } } }
+            }
+            if (pending is IntentMatcher.Decision.DidYouMean || pending is IntentMatcher.Decision.Unknown ||
+                (pending as? IntentMatcher.Decision.Run)?.confirm != null) {
+                Chip("Yes") { scope.launch { onUserSaid("yes") } }
+                Chip("No") { scope.launch { onUserSaid("no") } }
+            }
+        }
+        OutlinedTextField(input, { input = it }, Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(16.dp),
+            placeholder = { Text(if (pending != null) "Or type your answer" else "Or type a command") },
+            trailingIcon = {
+                TextButton({ val t = input; input = ""; scope.launch { onUserSaid(t) } }, enabled = input.isNotBlank() && !thinking) { Text("Send") }
+            })
+    }
+
+    @Composable
+    private fun Chip(label: String, onClick: () -> Unit) {
+        Text(label, Modifier.clip(RoundedCornerShape(20.dp)).background(BeakSoft).border(1.dp, Beak, RoundedCornerShape(20.dp))
+            .clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 9.dp), fontWeight = FontWeight.SemiBold)
+    }
+
+    // ================================================================= Teach
+
+    @Composable
+    private fun TeachScreen() = Page {
+        Text("Teach MYNA", fontWeight = FontWeight.Black, fontSize = 26.sp)
+        ServiceBanner()
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Card).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Say what you want, then show MYNA once.", color = InkSoft)
+            var heard by remember { mutableStateOf<String?>(null) }
+            val listen = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+                res.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { teachUtterance = it; heard = it }
+            }
+            OutlinedTextField(teachUtterance, { teachUtterance = it }, Modifier.fillMaxWidth(), label = { Text("Command") }, shape = RoundedCornerShape(16.dp),
+                trailingIcon = { IconButton({ runCatching { listen.launch(speechIntent("Say the command")) } }) { Text("🎤", fontSize = 20.sp) } })
+            // What speech-to-text produced, so a mis-hearing is caught before teaching.
+            heard?.let { Text("Heard: “$it”", style = MaterialTheme.typography.bodySmall, color = InkSoft) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                APPS.forEach { (name, pkg) -> FilterChip(teachApp == pkg, { teachApp = pkg }, label = { Text(name) }) }
+            }
+            var error by remember { mutableStateOf<String?>(null) }
+            Button({
+                val ok = MynaService.instance?.startRecording(teachUtterance, teachApp) == true
+                error = if (ok) null else "${APPS.firstOrNull { it.second == teachApp }?.first ?: teachApp} isn't installed"
+            }, Modifier.fillMaxWidth().height(52.dp), enabled = serviceOn, shape = RoundedCornerShape(16.dp)) { Text("Show me once", fontSize = 16.sp) }
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        }
+        MynaService.lastCompile?.let { c ->
+            if (c.removed.isNotEmpty()) Text("Left out as mistakes: " + c.removed.joinToString("; "), style = MaterialTheme.typography.bodySmall, color = InkSoft)
+            c.questions.forEach { Text("❓ $it", color = Warn) }
+        }
+        SectionTitle("All automations (${recipes.size})")
+        recipes.reversed().forEach { RecipeRow(it) }
+        lastRecording?.let { r ->
+            var open by remember { mutableStateOf(false) }
+            TextButton({ open = !open }) { Text(if (open) "Hide last raw recording" else "Show last raw recording (${r.steps.size} steps)") }
+            if (open) {
+                r.steps.forEachIndexed { i, s -> StepRow(i + 1, s.describe()) }
+                OutlinedButton({ replay(listOf(Recipes.fromRecording(r))) }, enabled = serviceOn) { Text("Replay raw") }
+            }
+        }
+    }
+
+    /** A recipe in the Teach list: blanks as fields (voice fills them on Home), run, add to Home, steps, delete. */
+    @Composable
+    private fun RecipeRow(r: Recipe) {
+        val values = remember(r.id) { r.slots.mapValues { mutableStateOf(it.value.value.orEmpty()) } }
+        var confirmDelete by remember(r.id) { mutableStateOf(false) }
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).border(1.dp, Line, RoundedCornerShape(20.dp)).padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                AppBadge(r.app)
+                Spacer(Modifier.weight(1f))
+                Text("${r.subtasks.sumOf { s -> s.steps.count { !it.noise } }} steps", style = MaterialTheme.typography.bodySmall, color = InkSoft)
+            }
+            Text(r.summary ?: r.utterance, fontWeight = FontWeight.SemiBold)
+            values.forEach { (name, v) ->
+                OutlinedTextField(v.value, { v.value = it }, Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(14.dp),
+                    label = { Text(name.replace('_', ' ')) },
+                    supportingText = r.slots[name]?.neighbours?.takeIf { it.isNotEmpty() }?.let { n -> { Text("e.g. " + n.take(3).joinToString()) } })
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Button({ replay(listOf(r), values.mapValues { it.value.value }) }, enabled = serviceOn, shape = RoundedCornerShape(12.dp)) { Text("Run") }
+                OutlinedButton({ save(r.copy(golden = !r.golden)) }, shape = RoundedCornerShape(12.dp)) { Text(if (r.golden) "✓ On Home" else "Add to Home") }
+                TextButton({ openRecipe = r }) { Text("Steps") }
+                Spacer(Modifier.weight(1f))
+                // Two taps to delete: a recipe can't be recovered.
+                TextButton({ if (confirmDelete) { Recipes(File(getExternalFilesDir(null), "recipes")).delete(r.id); refresh() } else confirmDelete = true }) {
+                    Text(if (confirmDelete) "Sure?" else "🗑")
                 }
             }
         }
     }
 
-    /** Ask MYNA: say or type a command; MYNA picks the recipe, fills blanks, asks when unsure (T3, T12, T13). */
+    // ================================================================= History
+
     @Composable
-    private fun AskCard() {
-        val scope = rememberCoroutineScope()
-        var input by remember { mutableStateOf("") }
-        val listen = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
-            res.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { heard ->
-                input = ""
-                scope.launch { onUserSaid(heard) }
-            }
-        }
-        val listenNow = { runCatching { listen.launch(speechIntent(if (pending != null) "Your answer" else "What should I do?")) } }
-        // When MYNA asks something, listen for the reply once it has finished speaking.
-        val asking = pending
-        LaunchedEffect(asking) {
-            if (asking != null) { kotlinx.coroutines.delay(2_500); if (pending === asking) listenNow() }
-        }
-        Text("Ask MYNA", style = MaterialTheme.typography.titleMedium)
-        chat.takeLast(6).forEach { Text(it, style = MaterialTheme.typography.bodySmall,
-            color = if (it.startsWith("MYNA")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface) }
-        if (thinking) Text("…thinking", style = MaterialTheme.typography.bodySmall)
-        OutlinedTextField(input, { input = it }, Modifier.fillMaxWidth(),
-            label = { Text(if (pending != null) "Your answer" else "Say or type a command") },
-            trailingIcon = { IconButton(onClick = { listenNow() }) { Text("🎤", style = MaterialTheme.typography.titleLarge) } })
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(enabled = input.isNotBlank() && !thinking, onClick = { val t = input; input = ""; scope.launch { onUserSaid(t) } }) { Text(if (pending != null) "Answer" else "Go") }
-            (pending as? IntentMatcher.Decision.AskSlot)?.let { q ->
-                Button(onClick = { scope.launch { onUserSaid("none") } }) { Text("None") }
-                q.recipe.slots[q.slot]?.value?.let { last -> Button(onClick = { scope.launch { onUserSaid("same") } }) { Text("Same ($last)") } }
-            }
-            if (pending is IntentMatcher.Decision.DidYouMean || pending is IntentMatcher.Decision.Unknown ||
-                (pending as? IntentMatcher.Decision.Run)?.confirm != null) {
-                Button(onClick = { scope.launch { onUserSaid("yes") } }) { Text("Yes") }
-                Button(onClick = { scope.launch { onUserSaid("no") } }) { Text("No") }
+    private fun HistoryScreen() = Page {
+        Text("History", fontWeight = FontWeight.Black, fontSize = 26.sp)
+        if (runs.isEmpty()) Text("No runs yet.", color = InkSoft)
+        runs.forEach { log ->
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Card).clickable { openRun = log }.padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(log.utterance.replaceFirstChar { it.uppercase() }, fontWeight = FontWeight.SemiBold, maxLines = 2)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        StatusPill(log.outcome)
+                        Text("${DateUtils.getRelativeTimeSpanString(log.startedAt)} · ${(log.endedAt - log.startedAt) / 1000}s · ${log.steps.size} steps",
+                            style = MaterialTheme.typography.bodySmall, color = InkSoft)
+                    }
+                }
+                Text("›", fontSize = 24.sp, color = InkSoft)
             }
         }
     }
+
+    // ================================================================= sheets
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    private fun RunSheet(log: RunLog) {
+        ModalBottomSheet({ openRun = null }, containerColor = MaterialTheme.colorScheme.background) {
+            Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(log.utterance.replaceFirstChar { it.uppercase() }, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    StatusPill(log.outcome)
+                    Text("${DateUtils.getRelativeTimeSpanString(log.startedAt)} · ${(log.endedAt - log.startedAt) / 1000}s", color = InkSoft)
+                }
+                log.reason?.let { Text(it, Modifier.clip(RoundedCornerShape(14.dp)).background(Card).padding(12.dp)) }
+                if (log.slots.isNotEmpty()) Text(log.slots.entries.joinToString("   ") { "${it.key}: ${it.value.ifBlank { "—" }}" }, color = InkSoft,
+                    style = MaterialTheme.typography.bodySmall)
+                log.steps.forEach { s ->
+                    StepRow(s.index, s.what, s.status, listOfNotNull(s.note, s.level?.let { "found at level $it" }, "${s.ms} ms".takeIf { s.ms > 0 }).joinToString(" · "))
+                }
+            }
+        }
+    }
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    private fun RecipeSheet(r0: Recipe) {
+        // Re-read so deleting a step updates the sheet.
+        val r = recipes.firstOrNull { it.id == r0.id } ?: r0
+        ModalBottomSheet({ openRecipe = null }, containerColor = MaterialTheme.colorScheme.background) {
+            Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                AppBadge(r.app)
+                Text(title(r), fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                if (r.slots.isNotEmpty()) Text("Blanks: " + r.slots.entries.joinToString { "${it.key} (last: ${it.value.value ?: it.value.default})" }, color = InkSoft)
+                if (r.defaults.isNotEmpty()) Text("Habit defaults: " + r.defaults.values.joinToString(), color = InkSoft)
+                if (r.paraphrases.isNotEmpty()) Text("Also understands: " + r.paraphrases.take(4).joinToString(" · "), color = InkSoft,
+                    style = MaterialTheme.typography.bodySmall)
+                var n = 0
+                r.subtasks.forEachIndexed { si, sub ->
+                    Text(sub.name.replace('_', ' ').replaceFirstChar { it.uppercase() } + (sub.why.takeIf { it.isNotBlank() }?.let { " — $it" } ?: ""),
+                        fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
+                    sub.steps.forEachIndexed { i, st ->
+                        n++
+                        StepRow(n, (if (st.noise) "✗ " else "") + st.describe(), null,
+                            listOfNotNull(st.why.takeIf { it.isNotBlank() }, st.screen?.note).joinToString(" · ")) {
+                            TextButton({
+                                val subs = r.subtasks.toMutableList()
+                                subs[si] = sub.copy(steps = sub.steps.filterIndexed { k, _ -> k != i })
+                                save(r.copy(subtasks = subs.filter { it.steps.isNotEmpty() }))
+                            }) { Text("✕", color = InkSoft) }
+                        }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button({ openRecipe = null; replay(listOf(r)) }, enabled = serviceOn, shape = RoundedCornerShape(12.dp)) { Text("Run") }
+                    OutlinedButton({ save(r.copy(golden = !r.golden)) }, shape = RoundedCornerShape(12.dp)) { Text(if (r.golden) "Remove from Home" else "Add to Home") }
+                }
+            }
+        }
+    }
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    private fun SettingsSheet() {
+        ModalBottomSheet({ settingsOpen = false }, containerColor = MaterialTheme.colorScheme.background) {
+            Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Settings", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Text("Accessibility service: " + if (serviceOn) "on" else "off", color = InkSoft)
+                OutlinedButton({ startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }) { Text("Accessibility settings") }
+                Text("Developer", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
+                var dumping by remember { mutableStateOf(MynaService.dumping) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(dumping, { MynaService.dumping = it; dumping = it }, enabled = serviceOn)
+                    Text("Dump screen trees", Modifier.padding(start = 10.dp))
+                }
+                PingButton()
+                Text("Files: /sdcard/Android/data/$packageName/files", style = MaterialTheme.typography.bodySmall, color = InkSoft)
+            }
+        }
+    }
+
+    @Composable
+    private fun PingButton() {
+        val scope = rememberCoroutineScope()
+        var ping by remember { mutableStateOf(if (Llm.mock) "AI: offline mode (no key)" else "AI: not tested") }
+        OutlinedButton({
+            ping = "AI: calling…"
+            scope.launch {
+                ping = runCatching {
+                    val t0 = System.currentTimeMillis()
+                    val r = Llm.llm("Say hi to the hackathon judges in 5 words.", PING_SCHEMA)
+                    "AI ok in ${System.currentTimeMillis() - t0} ms: ${r.getString("reply")}"
+                }.getOrElse { "AI failed: ${it.message}" }
+            }
+        }) { Text("Test AI connection") }
+        Text(ping, style = MaterialTheme.typography.bodySmall, color = InkSoft)
+    }
+
+    // ================================================================= assistant logic (unchanged behaviour)
 
     private fun speechIntent(prompt: String) = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
         .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -185,7 +479,8 @@ class MainActivity : ComponentActivity() {
             p is IntentMatcher.Decision.Unknown -> if (YES.containsMatchIn(text)) {
                 teachUtterance = p.utterance
                 APPS.firstOrNull { (name, _) -> p.utterance.contains(name, ignoreCase = true) }?.let { teachApp = it.second }
-                myna("Great. Pick the app below, tap Teach, and show me once.")
+                tab = Tab.TEACH
+                myna("Great. Pick the app, tap Show me once, and do it yourself.")
             } else myna("No problem.")
             NO.matches(text.trim()) -> myna("Okay.")
             YES.matches(text.trim().trimEnd('.', '!')) -> myna("There's nothing waiting for a yes. Tell me what to do.")
@@ -216,14 +511,14 @@ class MainActivity : ComponentActivity() {
         replay(listOf(r), values)
     }
 
-    /** T14 preview: "Did it work?" answered from the last run log. */
+    /** T14: "Did it work?" answered from the last run log. */
     private fun lastRunReport(): String {
-        val log = lastRun ?: return "I haven't run anything yet."
+        val log = runs.firstOrNull() ?: return "I haven't run anything yet."
         val what = log.utterance
         return when (log.outcome) {
-            com.example.myna_mimicyourinteractionsautomate.replay.Outcome.HANDED_OFF -> "Yes. For \"$what\" I reached the payment step and handed it to you."
-            com.example.myna_mimicyourinteractionsautomate.replay.Outcome.DONE -> "Yes, \"$what\" finished."
-            com.example.myna_mimicyourinteractionsautomate.replay.Outcome.STOPPED -> "You stopped it at step ${log.steps.size}."
+            Outcome.HANDED_OFF -> "Yes. For \"$what\" I reached the payment step and handed it to you."
+            Outcome.DONE -> "Yes, \"$what\" finished."
+            Outcome.STOPPED -> "You stopped it at step ${log.steps.size}."
             else -> {
                 val s = log.steps.lastOrNull { it.status != "ok" } ?: log.steps.lastOrNull()
                 "No. It stopped at step ${s?.index}, ${s?.what}, because ${log.reason}."
@@ -231,139 +526,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    @Composable
-    private fun TeachCard() {
-        Text("Teach", style = MaterialTheme.typography.titleMedium)
-        var utterance by ::teachUtterance
-        var heard by remember { mutableStateOf<String?>(null) }
-        val listen = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
-            res.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { utterance = it; heard = it }
-        }
-        var app by ::teachApp
-        var error by remember { mutableStateOf<String?>(null) }
-        OutlinedTextField(utterance, { utterance = it }, Modifier.fillMaxWidth(), label = { Text("Command") },
-            trailingIcon = {
-                IconButton(onClick = {
-                    val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-                        .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                        .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
-                        .putExtra(RecognizerIntent.EXTRA_PROMPT, "Say the command")
-                    runCatching { listen.launch(i) }.onFailure { heard = "Speech input isn't available on this phone" }
-                }) { Text("🎤", style = MaterialTheme.typography.titleLarge) }
-            })
-        // What speech-to-text produced, so a mis-hearing is caught before teaching.
-        heard?.let { Text("Heard: \"$it\"", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            APPS.forEach { (name, pkg) -> FilterChip(app == pkg, { app = pkg }, label = { Text(name) }) }
-        }
-        OutlinedTextField(app, { app = it.trim() }, Modifier.fillMaxWidth(), label = { Text("App package") })
-        Button(enabled = serviceOn, onClick = {
-            val ok = MynaService.instance?.startRecording(utterance, app) == true
-            error = if (ok) null else "$app is not installed"
-        }) { Text("Teach: show me once") }
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-    }
-
-    @Composable
-    private fun RecordingCard(r: Recording) {
-        Text("Last recording: \"${r.utterance}\" (${r.steps.size} steps, stopped by ${r.stoppedBy}${r.stopReason?.let { ": $it" } ?: ""})",
-            style = MaterialTheme.typography.titleSmall)
-        r.steps.forEachIndexed { i, s ->
-            Text("${i + 1}. ${s.describe()}", style = MaterialTheme.typography.bodySmall)
-        }
-        Button(enabled = serviceOn, onClick = { replay(listOf(Recipes.fromRecording(r))) }) { Text("Replay raw recording") }
-    }
-
-    @Composable
-    private fun RecipesCard() {
-        val golden = recipes.filter { it.golden }
-        Text("Recipes (${recipes.size})", style = MaterialTheme.typography.titleMedium)
-        MynaService.lastCompile?.let { c ->
-            if (c.removed.isNotEmpty()) Text("Left out as mistakes: " + c.removed.joinToString("; "), style = MaterialTheme.typography.bodySmall)
-            c.questions.forEach { Text("❓ $it", color = MaterialTheme.colorScheme.error) }
-        }
-        Button(enabled = serviceOn && golden.isNotEmpty(), onClick = { replay(golden) }) { Text("★ Golden run (${golden.size})") }
-        recipes.reversed().forEach { RecipeCard(it) }
-    }
-
-    /** One recipe: blanks as fields (voice replaces this in Phase 5), run, golden star, inspectable/editable steps (T1). */
-    @Composable
-    private fun RecipeCard(r: Recipe) {
-        var open by remember(r.id) { mutableStateOf(false) }
-        val values = remember(r.id) { r.slots.mapValues { mutableStateOf(it.value.value.orEmpty()) } }
-        HorizontalDivider()
-        val steps = r.subtasks.sumOf { s -> s.steps.count { !it.noise } }
-        var confirmDelete by remember(r.id) { mutableStateOf(false) }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text((if (r.golden) "★ " else "") + (r.summary ?: r.utterance) + "  · $steps steps · ${r.app.substringAfterLast('.')}",
-                Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
-            Button(onClick = { save(r.copy(golden = !r.golden)) }) { Text(if (r.golden) "Unstar" else "★") }
-            // Two taps to delete: a recipe can't be recovered.
-            Button(onClick = {
-                if (confirmDelete) { Recipes(File(getExternalFilesDir(null), "recipes")).delete(r.id); refresh() } else confirmDelete = true
-            }) { Text(if (confirmDelete) "Sure?" else "🗑") }
-        }
-        values.forEach { (name, v) ->
-            OutlinedTextField(v.value, { v.value = it }, Modifier.fillMaxWidth(), label = { Text("{$name}") },
-                supportingText = r.slots[name]?.neighbours?.takeIf { it.isNotEmpty() }?.let { n -> { Text("e.g. " + n.take(3).joinToString()) } })
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(enabled = serviceOn, onClick = { replay(listOf(r), values.mapValues { it.value.value }) }) { Text("Run") }
-            Button(onClick = { open = !open }) { Text(if (open) "Hide steps" else "Steps") }
-        }
-        if (open) {
-            if (r.paraphrases.isNotEmpty()) Text("Also understands: " + r.paraphrases.joinToString(" · "), style = MaterialTheme.typography.bodySmall)
-            if (r.defaults.isNotEmpty()) Text("Habit defaults: " + r.defaults.values.joinToString(), style = MaterialTheme.typography.bodySmall)
-            r.subtasks.forEachIndexed { si, sub ->
-                Text("▸ ${sub.name}${sub.why.takeIf { it.isNotBlank() }?.let { " — $it" } ?: ""}", style = MaterialTheme.typography.labelLarge)
-                sub.steps.forEachIndexed { i, st ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text((if (st.noise) "✗ " else "") + st.describe() + (st.why.takeIf { it.isNotBlank() }?.let { "\n   $it" } ?: "") +
-                            (st.screen?.note?.let { "  [$it]" } ?: ""), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                        Button(onClick = {
-                            val subs = r.subtasks.toMutableList()
-                            subs[si] = sub.copy(steps = sub.steps.filterIndexed { k, _ -> k != i })
-                            save(r.copy(subtasks = subs.filter { it.steps.isNotEmpty() }))
-                        }) { Text("✕") }
-                    }
-                }
-            }
-        }
-    }
-
-    private fun save(r: Recipe) {
-        Recipes(File(getExternalFilesDir(null), "recipes")).save(r); refresh()
-    }
-
-    @Composable
-    private fun RunCard(log: RunLog) {
-        Text("Last run: ${log.outcome}${log.reason?.let { " — $it" } ?: ""} (${(log.endedAt - log.startedAt) / 1000}s)",
-            style = MaterialTheme.typography.titleSmall)
-        log.steps.forEach { s ->
-            Text("${s.index}. [${s.status}${s.level?.let { " L$it" } ?: ""}] ${s.what}${s.note?.let { " — $it" } ?: ""}",
-                style = MaterialTheme.typography.bodySmall)
-        }
-    }
-
     private fun replay(list: List<Recipe>, slots: Map<String, String> = emptyMap()) {
         MynaService.instance?.replay(list, slots) { runOnUiThread { refresh() } }
     }
 
-    @Composable
-    private fun PingButton() {
-        val scope = rememberCoroutineScope()
-        var ping by remember { mutableStateOf(if (Llm.mock) "LLM: mock mode (no key)" else "LLM: not tested") }
-        Button(onClick = {
-            ping = "LLM: calling…"
-            scope.launch {
-                ping = runCatching {
-                    val t0 = System.currentTimeMillis()
-                    val r = Llm.llm("Say hi to the hackathon judges in 5 words.", PING_SCHEMA)
-                    "LLM ok in ${System.currentTimeMillis() - t0} ms: ${r.getString("reply")}"
-                }.getOrElse { "LLM failed: ${it.message}" }
-            }
-        }) { Text("Ping LLM") }
-        Text(ping)
+    private fun save(r: Recipe) {
+        Recipes(File(getExternalFilesDir(null), "recipes")).save(r); refresh()
     }
 
     override fun onResume() {
@@ -374,10 +542,12 @@ class MainActivity : ComponentActivity() {
 
     private fun refresh() {
         serviceOn = MynaService.instance != null
-        lastRecording = latest("recordings")?.let { runCatching { RecipeJson.decodeFromString<Recording>(it.readText()) }.getOrNull() }
-        lastRun = latest("runs")?.let { runCatching { RecipeJson.decodeFromString<RunLog>(it.readText()) }.getOrNull() }
-        recipes = Recipes(File(getExternalFilesDir(null), "recipes")).all()
+        val files = getExternalFilesDir(null)
+        lastRecording = File(files, "recordings").listFiles()?.maxByOrNull { it.lastModified() }
+            ?.let { runCatching { RecipeJson.decodeFromString<Recording>(it.readText()) }.getOrNull() }
+        runs = File(files, "runs").listFiles().orEmpty().sortedByDescending { it.lastModified() }.take(50)
+            .mapNotNull { runCatching { RecipeJson.decodeFromString<RunLog>(it.readText()) }.getOrNull() }
+        recipes = Recipes(File(files, "recipes")).all()
+        openRecipe = openRecipe?.let { o -> recipes.firstOrNull { it.id == o.id } }
     }
-
-    private fun latest(dir: String) = File(getExternalFilesDir(null), dir).listFiles()?.maxByOrNull { it.lastModified() }
 }
