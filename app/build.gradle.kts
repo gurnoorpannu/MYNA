@@ -59,6 +59,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.mlkit.text.recognition)   // on-device OCR for text-less elements
     testImplementation(libs.junit)
     testImplementation(libs.org.json) // real org.json for JVM tests (Android's is a stub)
     androidTestImplementation(platform(libs.androidx.compose.bom))

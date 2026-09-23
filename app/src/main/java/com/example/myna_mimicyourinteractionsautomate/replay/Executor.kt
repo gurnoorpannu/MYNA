@@ -35,7 +35,11 @@ data class OcrLine(val text: String, val l: Int, val t: Int, val r: Int, val b: 
  * Replays a recipe step by step with NO AI (design §4.5). Every action goes through [Device.actor],
  * i.e. the safety gate. Returns a [RunLog] with a status and reason for each step.
  */
-class Executor(private val device: Device, private val stepTimeoutMs: Long = 30_000) {
+class Executor(
+    private val device: Device,
+    private val stepTimeoutMs: Long = 30_000,
+    private val onStep: (StepLog, Int) -> Unit = { _, _ -> },   // progress for the overlay: (step, total)
+) {
 
     private class Stop(val outcome: Outcome, val reason: String) : Exception(reason)
 
@@ -45,6 +49,7 @@ class Executor(private val device: Device, private val stepTimeoutMs: Long = 30_
         try {
             steps.forEachIndexed { i, step ->
                 val sl = StepLog(i + 1, step.describe()).also { log.steps += it }
+                onStep(sl, steps.size)
                 val t0 = device.now()
                 runStep(step, slots, sl, recipe)
                 sl.ms = device.now() - t0

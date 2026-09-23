@@ -33,6 +33,28 @@ import com.example.myna_mimicyourinteractionsautomate.safety.GatedActor
 import com.example.myna_mimicyourinteractionsautomate.safety.SafetyGate
 import com.example.myna_mimicyourinteractionsautomate.screen.Identity
 import com.example.myna_mimicyourinteractionsautomate.screen.UiNode
+import com.example.myna_mimicyourinteractionsautomate.recipe.Recipe
+import com.example.myna_mimicyourinteractionsautomate.recipe.Recipes
+import com.example.myna_mimicyourinteractionsautomate.replay.Device
+import com.example.myna_mimicyourinteractionsautomate.replay.Executor
+import com.example.myna_mimicyourinteractionsautomate.replay.OcrLine
+import com.example.myna_mimicyourinteractionsautomate.replay.Outcome
+import com.example.myna_mimicyourinteractionsautomate.replay.RunLog
+import android.graphics.Bitmap
+import android.view.Display
+import android.widget.LinearLayout
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.resume
 import kotlinx.coroutines.delay
 import org.json.JSONObject
 import java.io.File
@@ -41,7 +63,7 @@ import java.io.File
  * The one AccessibilityService. Phase 0: tree dumps. Phase 1: teach recorder.
  * Files: /sdcard/Android/data/<pkg>/files/{dumps,recordings}
  */
-class MynaService : AccessibilityService() {
+class MynaService : AccessibilityService(), Device {
 
     companion object {
         const val TAG = "Myna"
@@ -82,7 +104,14 @@ class MynaService : AccessibilityService() {
     private var tts: TextToSpeech? = null
 
     /** Replay's only way to act on other apps: every tap/type is checked by the safety gate first. */
-    val actor = GatedActor(click = ::clickNode, setText = ::setNodeText, onBlocked = { handOff(it) })
+    override val actor = GatedActor(click = ::clickNode, setText = ::setNodeText, onBlocked = { handOff(it) })
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    @Volatile override var stopRequested = false
+        private set
+    var running = false
+        private set
+    private var runOverlay: Button? = null
 
     override fun onServiceConnected() {
         instance = this
@@ -93,6 +122,7 @@ class MynaService : AccessibilityService() {
 
     override fun onDestroy() {
         instance = null
+        scope.cancel()
         tts?.shutdown()
         super.onDestroy()
     }
@@ -341,6 +371,147 @@ class MynaService : AccessibilityService() {
     private fun hideOverlay() {
         overlay?.let { getSystemService(WindowManager::class.java).removeView(it) }
         overlay = null
+    }
+
+    // ---------------------------------------------------------------- replay (Device for the Executor)
+
+    val recipes by lazy { Recipes(File(getExternalFilesDir(null), "recipes")) }
+
+    /** Replay [list] one after another (the golden button passes several). Results land in files/runs/. */
+    fun replay(list: List<Recipe>, slots: Map<String, String> = emptyMap(), onDone: (List<RunLog>) -> Unit = {}) {
+        if (running || recorder != null || list.isEmpty()) return
+        running = true
+        stopRequested = false
+        scope.launch {
+            showRunOverlay()
+            val logs = mutableListOf<RunLog>()
+            for (r in list) {
+                if (stopRequested) break
+                val log = Executor(this@MynaService, onStep = { st, n -> runOverlay?.text = "▶ ${st.index}/$n ${st.what.take(28)}  ■ Stop" })
+                    .run(r, slots)
+                logs += log
+                saveRun(log)
+                when (log.outcome) {
+                    Outcome.STUCK, Outcome.FAILED -> say("I'm stuck. ${log.reason}")
+                    Outcome.DONE -> say("Done.")
+                    else -> {}
+                }
+            }
+            hideRunOverlay()
+            running = false
+            onDone(logs)
+            if (logs.lastOrNull()?.outcome != Outcome.HANDED_OFF) {
+                startActivity(Intent(this@MynaService, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+            }
+        }
+    }
+
+    private fun saveRun(log: RunLog) {
+        val dir = File(getExternalFilesDir(null), "runs").apply { mkdirs() }
+        File(dir, "run-${log.startedAt}.json").writeText(RecipeJson.encodeToString(log))
+        Log.i(TAG, "run ${log.recipeId}: ${log.outcome} ${log.reason ?: ""}")
+    }
+
+    override suspend fun screen(): Pair<UiNode, String>? {
+        delay(250)                 // let the last action's events start arriving
+        awaitSettled()
+        val live = rootInActiveWindow ?: return null
+        val pkg = live.packageName?.toString() ?: return null
+        return UiTree.capture(live) to pkg
+    }
+
+    /** Clean start (design §4.1): Home, then open the app from its launcher entry with a fresh task. */
+    override suspend fun launchClean(pkg: String): Boolean {
+        val launch = packageManager.getLaunchIntentForPackage(pkg) ?: return false
+        performGlobalAction(GLOBAL_ACTION_HOME)
+        delay(600)
+        startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+        val deadline = System.currentTimeMillis() + 10_000
+        while (rootInActiveWindow?.packageName?.toString() != pkg && System.currentTimeMillis() < deadline) delay(200)
+        delay(1_500)               // splash screens
+        awaitSettled()
+        return rootInActiveWindow?.packageName?.toString() == pkg
+    }
+
+    override fun key(key: SystemKey) {
+        performGlobalAction(if (key == SystemKey.BACK) GLOBAL_ACTION_BACK else GLOBAL_ACTION_HOME)
+    }
+
+    override fun scroll(list: UiNode, forward: Boolean): Boolean {
+        val live = list.live as? AccessibilityNodeInfo
+        val action = if (forward) AccessibilityNodeInfo.ACTION_SCROLL_FORWARD else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+        if (live?.performAction(action) == true) return true
+        // Compose lists often ignore the action: swipe inside the list instead (a swipe can't buy anything).
+        val x = (list.l + list.r) / 2f
+        val (from, to) = if (forward) list.t + (list.b - list.t) * 0.75f to list.t + (list.b - list.t) * 0.25f
+                         else list.t + (list.b - list.t) * 0.25f to list.t + (list.b - list.t) * 0.75f
+        val path = Path().apply { moveTo(x, from); lineTo(x, to) }
+        return dispatchGesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, 350)).build(), null, null)
+    }
+
+    override suspend fun ocr(): List<OcrLine> {
+        val bmp = screenshot() ?: return emptyList()
+        return suspendCancellableCoroutine { cont ->
+            TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS).process(InputImage.fromBitmap(bmp, 0))
+                .addOnSuccessListener { text ->
+                    cont.resume(text.textBlocks.flatMap { it.lines }.mapNotNull { l ->
+                        l.boundingBox?.let { b -> OcrLine(l.text, b.left, b.top, b.right, b.bottom) }
+                    })
+                }
+                .addOnFailureListener { cont.resume(emptyList()) }
+        }.also { Log.d(TAG, "ocr: ${it.joinToString(" | ") { l -> l.text }.take(300)}") }
+    }
+
+    private suspend fun screenshot(): Bitmap? = suspendCancellableCoroutine { cont ->
+        takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
+            override fun onSuccess(result: ScreenshotResult) {
+                val hw = Bitmap.wrapHardwareBuffer(result.hardwareBuffer, result.colorSpace)
+                cont.resume(hw?.copy(Bitmap.Config.ARGB_8888, false))
+                result.hardwareBuffer.close()
+            }
+            override fun onFailure(errorCode: Int) { Log.w(TAG, "screenshot failed $errorCode"); cont.resume(null) }
+        })
+    }
+
+    /** Spoken question + buttons on an overlay. Null after 20 s without an answer. */
+    override suspend fun ask(question: String, options: List<String>): String? {
+        say(question)
+        val answer = CompletableDeferred<String?>()
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(0xF0202124.toInt())
+            setPadding(48, 40, 48, 40)
+            addView(TextView(context).apply { text = question; textSize = 18f; setTextColor(Color.WHITE) })
+            options.forEach { o -> addView(Button(context).apply { text = o; setOnClickListener { answer.complete(o) } }) }
+        }
+        val wm = getSystemService(WindowManager::class.java)
+        wm.addView(box, WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT,
+        ).apply { gravity = Gravity.CENTER })
+        return try { withTimeoutOrNull(20_000) { answer.await() } } finally { wm.removeView(box) }
+    }
+
+    override fun say(text: String) {
+        tts?.speak(text, TextToSpeech.QUEUE_ADD, null, text.hashCode().toString())
+    }
+
+    override fun now() = System.currentTimeMillis()
+
+    fun requestStop() { stopRequested = true }
+
+    private fun showRunOverlay() {
+        val btn = Button(this).apply { text = "▶ starting…  ■ Stop"; setOnClickListener { requestStop(); text = "stopping…" } }
+        getSystemService(WindowManager::class.java).addView(btn, WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT,
+        ).apply { gravity = Gravity.TOP or Gravity.END; y = 300 })
+        runOverlay = btn
+    }
+
+    private fun hideRunOverlay() {
+        runOverlay?.let { getSystemService(WindowManager::class.java).removeView(it) }
+        runOverlay = null
     }
 
     // ---------------------------------------------------------------- Phase 0 dumps

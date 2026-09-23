@@ -34,7 +34,10 @@ import androidx.compose.ui.unit.dp
 import com.example.myna_mimicyourinteractionsautomate.a11y.MynaService
 import com.example.myna_mimicyourinteractionsautomate.llm.Llm
 import com.example.myna_mimicyourinteractionsautomate.recipe.RecipeJson
+import com.example.myna_mimicyourinteractionsautomate.recipe.Recipe
+import com.example.myna_mimicyourinteractionsautomate.recipe.Recipes
 import com.example.myna_mimicyourinteractionsautomate.recipe.Recording
+import com.example.myna_mimicyourinteractionsautomate.replay.RunLog
 import com.example.myna_mimicyourinteractionsautomate.record.describe
 import com.example.myna_mimicyourinteractionsautomate.ui.theme.MYNAMimicYourINteractionsAutomateTheme
 import kotlinx.coroutines.launch
@@ -45,6 +48,8 @@ class MainActivity : ComponentActivity() {
 
     private var serviceOn by mutableStateOf(false)
     private var lastRecording by mutableStateOf<Recording?>(null)
+    private var recipes by mutableStateOf<List<Recipe>>(emptyList())
+    private var lastRun by mutableStateOf<RunLog?>(null)
 
     private companion object {
         val PING_SCHEMA = JSONObject("""{"type":"object","required":["reply"],"properties":{"reply":{"type":"string"}}}""")
@@ -68,6 +73,9 @@ class MainActivity : ComponentActivity() {
 
                         TeachCard()
                         lastRecording?.let { RecordingCard(it) }
+                        HorizontalDivider()
+                        RecipesCard()
+                        lastRun?.let { RunCard(it) }
 
                         HorizontalDivider()
                         Text("Dev tools", style = MaterialTheme.typography.titleMedium)
@@ -112,6 +120,42 @@ class MainActivity : ComponentActivity() {
         r.steps.forEachIndexed { i, s ->
             Text("${i + 1}. ${s.describe()}", style = MaterialTheme.typography.bodySmall)
         }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(enabled = serviceOn, onClick = { replay(listOf(Recipes.fromRecording(r))) }) { Text("Replay now") }
+            Button(onClick = {
+                MynaService.instance?.recipes?.save(Recipes.fromRecording(r, golden = true)); refresh()
+            }) { Text("Save as golden") }
+        }
+    }
+
+    @Composable
+    private fun RecipesCard() {
+        val golden = recipes.filter { it.golden }
+        Text("Recipes (${recipes.size})", style = MaterialTheme.typography.titleMedium)
+        Button(enabled = serviceOn && golden.isNotEmpty(), onClick = { replay(golden) }) {
+            Text("★ Golden run (${golden.size})")
+        }
+        recipes.forEach { r ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text((if (r.golden) "★ " else "") + "${r.utterance} · ${r.app.substringAfterLast('.')}",
+                    Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                Button(enabled = serviceOn, onClick = { replay(listOf(r)) }) { Text("Run") }
+            }
+        }
+    }
+
+    @Composable
+    private fun RunCard(log: RunLog) {
+        Text("Last run: ${log.outcome}${log.reason?.let { " — $it" } ?: ""} (${(log.endedAt - log.startedAt) / 1000}s)",
+            style = MaterialTheme.typography.titleSmall)
+        log.steps.forEach { s ->
+            Text("${s.index}. [${s.status}${s.level?.let { " L$it" } ?: ""}] ${s.what}${s.note?.let { " — $it" } ?: ""}",
+                style = MaterialTheme.typography.bodySmall)
+        }
+    }
+
+    private fun replay(list: List<Recipe>) {
+        MynaService.instance?.replay(list) { runOnUiThread { refresh() } }
     }
 
     @Composable
@@ -133,9 +177,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        serviceOn = MynaService.instance != null
-        lastRecording = File(getExternalFilesDir(null), "recordings").listFiles()
-            ?.maxByOrNull { it.lastModified() }
-            ?.let { runCatching { RecipeJson.decodeFromString<Recording>(it.readText()) }.getOrNull() }
+        refresh()
     }
+
+    private fun refresh() {
+        serviceOn = MynaService.instance != null
+        lastRecording = latest("recordings")?.let { runCatching { RecipeJson.decodeFromString<Recording>(it.readText()) }.getOrNull() }
+        lastRun = latest("runs")?.let { runCatching { RecipeJson.decodeFromString<RunLog>(it.readText()) }.getOrNull() }
+        recipes = Recipes(File(getExternalFilesDir(null), "recipes")).all()
+    }
+
+    private fun latest(dir: String) = File(getExternalFilesDir(null), dir).listFiles()?.maxByOrNull { it.lastModified() }
 }
