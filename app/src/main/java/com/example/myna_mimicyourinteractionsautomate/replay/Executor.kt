@@ -68,15 +68,16 @@ class Executor(
     suspend fun run(recipe: Recipe, given: Map<String, String> = emptyMap()): RunLog {
         // Blanks not given fall back to the demo's value / default ("Margherita", qty 1…); given "" = leave it out.
         val slots = recipe.slots.mapNotNull { (k, v) -> (v.value ?: v.default)?.let { k to it } }.toMap() + given
-        val log = RunLog(recipe.id, recipe.utterance, device.now())
+        val log = RunLog(recipe.id, Slots.fill(recipe.summary ?: recipe.utterance, slots)!!, device.now(), slots = slots)
         val steps = recipe.subtasks.flatMap { it.steps }.filter { !it.noise }
         try {
             var retries = 0
             steps.forEachIndexed { i, step ->
-                val sl = StepLog(i + 1, step.describe()).also { log.steps += it }
+                val sl = StepLog(i + 1, Slots.fill(step.describe(), slots)!!).also { log.steps += it }
                 onStep(sl, steps.size)
                 val t0 = device.now()
                 val pending = unsubmitted
+                val query = lastQuery
                 while (true) {
                     try { runStep(step, slots, sl, recipe); break }
                     catch (s: Stop) {
@@ -99,6 +100,7 @@ class Executor(
                     }
                 }
                 if (unsubmitted == pending) unsubmitted = null   // any other step consumes it
+                if (lastQuery == query) lastQuery = null          // results only matter to the step right after the search
                 sl.ms = device.now() - t0
             }
             finish(recipe, log)
@@ -188,7 +190,13 @@ class Executor(
             var found = Finder.find(root, target) ?: ocrFind(target)?.let { Finder.Found(it, 4, "ocr \"${it.label}\"") }
             // Many identical buttons right after a search ("Add to cart" on every Amazon result): use the one
             // in the row that best matches what was searched, never an ad's.
-            if (found != null && found.candidates > 1 && lastQuery != null) bestRowFor(root, found.node, lastQuery!!)?.let { found = found!!.copy(node = it, how = found!!.how + " in the best-matching row") }
+            if (found != null && lastQuery != null && step.type == StepType.TAP) {
+                val row = bestRowFor(root, found!!.node, lastQuery!!)
+                // Right after a search, a list button whose row doesn't match (or is an ad) is the wrong product:
+                // treat as not found, so the "open the best result" recovery takes over.
+                found = row?.let { found!!.copy(node = it, how = found!!.how + " in the best-matching row") }
+                if (found == null) throw Stop(Outcome.STUCK, "no \"${target.label}\" in a result matching \"$lastQuery\"")
+            }
             // A TYPE target that is only a search *button* (Amazon home): tap it to open the real field.
             if (found != null && step.type == StepType.TYPE && !found.node.editable) {
                 val field = root.walk().firstOrNull { it.visible && it.editable }
@@ -269,7 +277,7 @@ class Executor(
             if (field != null) {
                 if (device.actor.type(field, query, root, pkg, submit = true) !is GatedActor.Result.Done)
                     throw Stop(Outcome.FAILED, "couldn't type \"$query\" into the search box")
-                lastQuery = query
+                if (pick == null) lastQuery = query   // with a pick we land on its page, not on a results list
                 typed = true; break
             }
             Identity.searchBar(root)?.let { device.actor.tap(it, root, pkg) } ?: break

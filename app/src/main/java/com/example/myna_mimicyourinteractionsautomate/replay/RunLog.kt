@@ -13,6 +13,7 @@ data class RunLog(
     var reason: String? = null,               // "stopped at Domino's menu: Farmhouse not found"
     val steps: MutableList<StepLog> = mutableListOf(),
     var aiCalls: Int = 0,
+    val slots: Map<String, String> = emptyMap(),  // the blank values this run used
 )
 
 @Serializable

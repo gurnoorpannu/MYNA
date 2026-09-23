@@ -116,7 +116,8 @@ object IntentMatcher {
     fun ask(r: Recipe, values: Map<String, String>, missing: List<String>): Decision.AskSlot {
         val s = missing.first()
         val last = r.slots[s]?.let { it.value ?: it.default }
-        return Decision.AskSlot(r, values, s, "Which ${s.replace('_', ' ')}?" + (last?.let { " Last time it was $it." } ?: ""), missing.drop(1))
+        return Decision.AskSlot(r, values, s, "Which ${s.replace('_', ' ')}?" + (last?.let { " Last time it was $it —" } ?: "") +
+            " or say none to leave it out.", missing.drop(1))
     }
 
     /** The whole decision for one spoken command. */
