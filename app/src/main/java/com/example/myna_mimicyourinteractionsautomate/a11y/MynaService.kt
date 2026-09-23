@@ -118,6 +118,7 @@ class MynaService : AccessibilityService(), Device {
         instance = this
         if (dumping) newDumpSession()
         tts = TextToSpeech(this) {}
+        if (com.example.myna_mimicyourinteractionsautomate.BuildConfig.DEBUG) registerDebugHook()
         Log.i(TAG, "service connected, launcher=$launcherPkg")
     }
 
@@ -542,6 +543,40 @@ class MynaService : AccessibilityService(), Device {
     private fun hideRunOverlay() {
         runOverlay?.let { getSystemService(WindowManager::class.java).removeView(it) }
         runOverlay = null
+    }
+
+    // ---------------------------------------------------------------- debug hook (debug builds only)
+
+    /**
+     * From the Mac:  adb shell am broadcast -a myna.DEBUG --es cmd dump
+     *                adb shell am broadcast -a myna.DEBUG --es cmd tap --ei x 703 --ei y 2098
+     * Guarded by android.permission.DUMP, which only the shell (adb) holds — other apps can't drive MYNA through it.
+     */
+    private fun registerDebugHook() {
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(c: android.content.Context, i: Intent) {
+                when (i.getStringExtra("cmd")) {
+                    "dump" -> captureFront()?.let { (root, pkg) ->
+                        val f = File(getExternalFilesDir(null), "debug-tree.txt")
+                        f.writeText("pkg=$pkg modal=${Identity.isModal(root)} selected=${Identity.selectedOptions(root)} " +
+                            "sheetButton=${Identity.blankSheetButton(root)?.bounds} gate=${SafetyGate.check(root, pkg)}\n" + debugTree(root))
+                        Log.i(TAG, "debug dump → $f")
+                    }
+                    "tap" -> {
+                        val x = i.getIntExtra("x", 0); val y = i.getIntExtra("y", 0)
+                        clickNode(UiNode(l = x, t = y, r = x, b = y))   // bypasses the gate on purpose: dev only, adb only
+                    }
+                }
+            }
+        }
+        registerReceiver(receiver, android.content.IntentFilter("myna.DEBUG"), android.Manifest.permission.DUMP, null, RECEIVER_EXPORTED)
+    }
+
+    private fun debugTree(n: UiNode, depth: Int = 0): String = buildString {
+        append("  ".repeat(depth)).append(n.cls).append(" \"").append(n.label ?: "").append("\" #").append(n.id ?: "")
+            .append(" ").append(n.bounds).append(if (n.clickable) " c" else "").append(if (n.checkable) (if (n.checked) " [x]" else " [ ]") else "")
+            .append(if (n.visible) "" else " invisible").append('\n')
+        n.children.forEach { append(debugTree(it, depth + 1)) }
     }
 
     // ---------------------------------------------------------------- Phase 0 dumps
