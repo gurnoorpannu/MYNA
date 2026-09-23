@@ -22,7 +22,7 @@ class SafetyGateTest {
     private val zomatoMenu = screen(text("Domino's Pizza"), text("Margherita Pizza"), button("ADD"), button("View Cart"))
     private val amazonCart = screen(text("Shopping Cart"), text("Get 5% back with Amazon Pay UPI"), button("Proceed to checkout"))
     private val amazonPayment = screen(text("Payment"), text("Pay by any UPI App"), text("+ Add a new credit or debit card"),
-        text("Amazon Pay Balance: ₹0.00"), UiNode(cls = "RadioButton", clickable = true), button("Use this payment method"))
+        text("Amazon Pay Balance: ₹0.00"), UiNode(children = listOf(UiNode(cls = "RadioButton", clickable = true), text("Pay by any UPI App"))), button("Use this payment method"))
     private val otpScreen = screen(text("Enter the 6-digit code sent to +91 98xxx"), field("Enter OTP"), button("Verify"))
     private val loginScreen = screen(field("Mobile number"), button("Continue with Phone Number"))
 
@@ -49,6 +49,14 @@ class SafetyGateTest {
             button("Proceed to Buy (1 item)")), "in.amazon.mShop.android.shopping"))
         assertNull(SafetyGate.check(screen(field("Search for restaurant, item or more")), "com.application.zomato"))
         assertNull(SafetyGate.check(screen(text("Sign in for the best experience"), button("Sign in")), "x"))  // banner, no form
+    }
+
+    @Test fun productPageWithVariantRadiosAndEmiOffersIsNotPayment() {
+        // 23 Sep Amazon laptop-stand page: colour radios + "No Cost EMI" + bank credit card offers.
+        val pdp = screen(UiNode(cls = "RadioGroup", children = listOf(UiNode(text = "Submit", cls = "RadioButton", clickable = true, checkable = true, checked = true),
+            UiNode(text = "Submit", cls = "RadioButton", clickable = true, checkable = true))),
+            text("₹767 x 3m No Cost EMI"), text("Amazon Pay ICICI Bank Credit Card"), button("Add to cart"), button("Buy Now"))
+        assertNull(SafetyGate.check(pdp, "in.amazon.mShop.android.shopping"))
     }
 
     @Test fun tapLevelBlocksCommitTargetsEvenOnSafeScreens() {

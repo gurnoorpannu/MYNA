@@ -373,6 +373,8 @@ class Executor(
                 val flat = Identity.loose(title)
                 // The search bar echoes the query; a result never equals it exactly. Ads first on the page aren't results.
                 if (flat == Identity.loose(query) || n.id?.contains("search", ignoreCase = true) == true || title in opened) return@mapNotNull null
+                // Ad links are labelled with their web address (…sspa…&keywords=laptop+stand): not a title, not a result.
+                if (URLISH.containsMatchIn(title)) return@mapNotNull null
                 // The row itself says it's an ad ("Sponsored Ad - …", or a "Sponsored" tag inside the row).
                 if (n.walk().any { c -> c.label?.let(AD::containsMatchIn) == true }) return@mapNotNull null
                 val score = want.count { w -> Identity.loose(w).let { it.isNotEmpty() && flat.contains(it) } }.toDouble() / want.size
@@ -450,6 +452,7 @@ class Executor(
 
     companion object {
         const val MAX_SCROLLS = 5
+        private val URLISH = Regex("(^ref=|https?://|sspa|[?&][a-z_]+=)", RegexOption.IGNORE_CASE)
         private val AD = Regex("^(sponsored|ad)\\b|\\bsponsored (ad|information)\\b", RegexOption.IGNORE_CASE)
         const val SHEET_ANIMATION_MS = 800L
         const val USER_TAP_WAIT_MS = 30_000L

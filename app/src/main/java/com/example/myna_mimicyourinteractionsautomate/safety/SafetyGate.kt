@@ -72,7 +72,9 @@ object SafetyGate {
         val isCart = visible.any { it.clickable && it.walk().any { c -> c.label?.let(CART_NEXT::containsMatchIn) == true } }
         // Carts advertise "credit card offers" + "Pay balance" (2 kinds): not a payment screen. Real ones list
         // ≥3 kinds (Zomato: UPI, card, wallet; Amazon: +netbanking, COD, EMI), or 2 with radio buttons to pick one.
-        val radios = visible.any { it.cls?.contains("Radio") == true }
+        // Radios must be picking a PAYMENT method: product pages have colour/size radios next to EMI offers.
+        val radios = visible.any { r -> r.cls?.endsWith("RadioButton") == true &&
+            (sequenceOf(r) + r.ancestors().take(1)).any { a -> a.walk().any { c -> c.label?.let { l -> PAY_METHODS.any { (_, re) -> re.containsMatchIn(l) } } == true } } }
         if (!isCart && (methods.size >= 3 || (methods.size >= 2 && radios))) return Block(Kind.PAYMENT, "payment options on screen (${methods.joinToString()})")
 
         if (visible.any { it.editable } && visible.any { it.clickable && it.label?.let(LOGIN_BUTTON::matches) == true })
