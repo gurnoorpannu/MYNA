@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">MYNA- Mimic Your iNteractions &amp; Automate</string>
+    <string name="a11y_description">MYNA watches the screen while you teach it a task, then replays the taps for you. It never taps on payment, OTP or password screens.</string>
 </resources>
