@@ -62,6 +62,7 @@ class MynaService : AccessibilityService() {
     var recorder: Recorder? = null
         private set
     private var fgPkg: String? = null            // package currently in front (launcher counts)
+    private var awaitingApp: String? = null      // set during clean start
     private val activityOf = mutableMapOf<String, String>()
     private var overlay: Button? = null
 
@@ -107,7 +108,10 @@ class MynaService : AccessibilityService() {
     private fun onWindow(pkg: String, cls: String?) {
         if (cls != null && isActivity(pkg, cls)) activityOf[pkg] = cls
         val rec = recorder ?: return
-        if (pkg == fgPkg) return
+        // Clean start in progress: ignore everything until the target app is in front.
+        awaitingApp?.let { if (pkg == it) { awaitingApp = null; fgPkg = pkg; updateOverlay() }; return }
+        // Background windows (Samsung home's Google feed) fire events too; only the active window counts.
+        if (pkg == fgPkg || rootInActiveWindow?.packageName?.toString() != pkg) return
         when {
             pkg == launcherPkg -> if (rec.steps.isNotEmpty()) rec.onKey(SystemKey.HOME)
             fgPkg == launcherPkg -> rec.onLaunch(pkg)   // opened from the launcher
@@ -177,13 +181,14 @@ class MynaService : AccessibilityService() {
     /** Clean start (Home, then launch from the launcher) and begin recording. False if the app isn't installed. */
     fun startRecording(utterance: String, app: String): Boolean {
         val launch = packageManager.getLaunchIntentForPackage(app) ?: return false
-        recorder = Recorder(utterance, app)
-        fgPkg = launcherPkg
+        recorder = Recorder(utterance, app).also { it.onLaunch(app) }
+        awaitingApp = app
         performGlobalAction(GLOBAL_ACTION_HOME)
         main.postDelayed({
             startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
         }, 500)
         showOverlay()
+        Toast.makeText(this, "Your turn: do the task yourself. Tap ■ Done when finished.", Toast.LENGTH_LONG).show()
         return true
     }
 
@@ -216,7 +221,8 @@ class MynaService : AccessibilityService() {
 
     private fun updateOverlay() {
         val rec = recorder ?: return
-        overlay?.text = "● REC ${rec.steps.count { !it.noise }}  ■ Done"
+        val n = rec.steps.count { !it.noise } - 1   // don't count the automatic launch
+        overlay?.text = if (awaitingApp != null) "● opening app…" else if (n == 0) "● REC: show me  ■ Done" else "● REC $n  ■ Done"
     }
 
     private fun hideOverlay() {
