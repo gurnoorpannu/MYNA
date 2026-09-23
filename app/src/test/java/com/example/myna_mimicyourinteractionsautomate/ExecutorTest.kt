@@ -49,6 +49,13 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
         "search" -> UiNode(cls = "FrameLayout", b = 2400, children = listOf(
             UiNode(id = "edittext", hint = "Restaurant name or a dish...", text = "Type to search restaurants or dishes", editable = true, clickable = true, t = 100, b = 200),
             UiNode(cls = "ComposeView", scrollable = true, t = 300, b = 2400)))      // text-less suggestions
+        // Results page (after Enter or a suggestion tap): accessible rows, the restaurant twice.
+        "results" -> UiNode(cls = "FrameLayout", b = 2400, children = listOf(
+            UiNode(id = "edittext", text = "Type to search restaurants or dishes", editable = true, t = 100, b = 200),
+            UiNode(cls = "RecyclerView", scrollable = true, t = 250, b = 2400, children = listOf(
+                UiNode(id = "top_row", clickable = true, t = 250, b = 350, children = listOf(t("Domino's Pizza", 260))),
+                UiNode(id = "pizza_hut", clickable = true, t = 400, b = 500, children = listOf(t("Pizza Hut", 410))),
+                UiNode(id = "res_card", clickable = true, t = 900, b = 1200, children = listOf(t("Domino's Pizza", 910), t("35–40 mins", 960)))))))
         // A real dialog is its own window: while it's up, the active window shows only the dialog.
         "menu" -> if (popup) UiNode(cls = "Dialog", t = 600, b = 1400, children = listOf(
                 t("Flat ₹100 OFF!", 650), UiNode(text = "Order now", cls = "Button", clickable = true, t = 1200, b = 1260),
@@ -81,7 +88,9 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
             n.label == "Not now" -> popup = false
             n.label == "Order now" -> error("tapped the pop-up's main action!")
             n.id == "search_edit_text" -> state = "search"
-            n.cls == "OcrText" && n.text == "Domino's Pizza" -> state = "menu"
+            n.cls == "OcrText" && n.text == "Domino's Pizza" -> state = "results"
+            n.id == "top_row" || n.id == "res_card" -> state = "menu"
+            n.id == "pizza_hut" -> error("opened the wrong restaurant!")
             n.id == "button_add" -> cart += n.parent!!.children[2].text!!
             n.id == "cart_bar" -> state = "cart"
             n.id == "cv_checkout_container" -> error("tapped Place Order!")
@@ -99,12 +108,12 @@ class ExecutorTest {
     private val recipe = Recipe("zomato_golden", app, "Order a Margherita pizza from Domino's", end = End.PAYMENT_SCREEN,
         subtasks = listOf(Subtask("demo", steps = listOf(
             step(StepType.LAUNCH),
-            step(StepType.TYPE, Target(label = "Restaurant name or a dish...", id = "edittext", key = UniqueKey(KeyKind.ID, "edittext")), text = "{restaurant}"),
-            step(StepType.TAP, Target(label = "Domino's Pizza", key = UniqueKey(KeyKind.OCR, "Domino's Pizza"))),
+            Step(StepType.GOAL, goal = "search", text = "{restaurant}", args = mapOf("pick" to "{restaurant_name}"), screen = Screen("s", lang = "en"),
+                target = Target(label = "Restaurant name or a dish...", id = "edittext", key = UniqueKey(KeyKind.ID, "edittext"))),
             step(StepType.TAP, Target(id = "button_add", cls = "View", key = UniqueKey(KeyKind.NEAR_TEXT, "{item}"))),
             step(StepType.TAP, Target(id = "cart_bar", key = UniqueKey(KeyKind.CHILD_TEXT, "View Cart"))),
         ))))
-    private val demo = mapOf("restaurant" to "Domino's", "item" to "Margherita Pizza")
+    private val demo = mapOf("restaurant" to "Domino's", "restaurant_name" to "Domino's Pizza", "item" to "Margherita Pizza")
 
     @Test fun exactReplayReachesCartAndHandsOffWithZeroTapsThere() = runBlocking {
         val z = FakeZomato()
@@ -112,9 +121,18 @@ class ExecutorTest {
         assertEquals(log.reason, Outcome.HANDED_OFF, log.outcome)
         assertEquals(listOf("Margherita Pizza"), z.cart)
         assertEquals("Domino's", z.typed)
-        assertEquals(4, log.steps.find { it.what.startsWith("tap Domino") }!!.level)   // found by OCR
+        assertTrue(log.steps.any { it.note?.contains("opened \"Domino's Pizza\"") == true })   // OCR hop + results hop
         assertTrue(z.blocks.single().contains("Place Order"))
         assertFalse(z.taps.any { it.contains("checkout") })
+    }
+
+    @Test fun untaughtViewCartTapIsFoundAtTheEnd() = runBlocking {
+        // The demo's View Cart tap sent no event, so the recipe stops after Add.
+        val z = FakeZomato()
+        val short = recipe.copy(subtasks = listOf(Subtask("demo", steps = recipe.subtasks[0].steps.dropLast(1))))
+        val log = Executor(z).run(short, demo)
+        assertEquals(log.reason, Outcome.HANDED_OFF, log.outcome)
+        assertTrue(log.steps.last().note == "towards checkout")
     }
 
     @Test fun changedItemAddsFarmhouse() = runBlocking {

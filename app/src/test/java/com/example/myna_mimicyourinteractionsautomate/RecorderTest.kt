@@ -56,3 +56,15 @@ class RecorderTest {
         assertEquals(setOf(home.signature, menu.signature), r.snapshots.keys)
     }
 }
+
+class SearchGoalRecorderTest {
+    @Test fun typingThenLandingBecomesOneSearchStep() {
+        val rec = Recorder("order margherita from dominos", "com.application.zomato") { 0L }
+        val field = Target(label = "Restaurant name or a dish...", id = "edittext")
+        rec.onText(field, "dominos", Screen("s"))
+        rec.onSearchLanded("Domino's Pizza")   // suggestions → results
+        rec.onSearchLanded("Domino's Pizza")   // results → restaurant page
+        assertEquals(listOf("search \"dominos\" and open \"Domino's Pizza\""), rec.steps.map { it.describe() })
+        assertEquals(StepType.GOAL, rec.steps.single().type)
+    }
+}

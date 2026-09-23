@@ -38,6 +38,25 @@ class Recorder(
     fun onInferredTap(target: Target, screen: Screen) =
         add(Step(StepType.TAP, target = target, screen = screen, why = "inferred: app sent no click event"))
 
+    /**
+     * Typing was followed by a new screen with no visible tap (suggestion rows/Enter send no events).
+     * Record what the user did, not the taps we can't see: "search <query> and open <pick>".
+     * Called again on each further hop; the pick is updated to where the user finally landed.
+     */
+    fun onSearchLanded(pick: String?) {
+        val i = steps.lastIndex
+        val last = steps.getOrNull(i) ?: return
+        steps[i] = when {
+            last.type == StepType.TYPE -> Step(StepType.GOAL, goal = "search", target = last.target, text = last.text,
+                args = pick?.let { mapOf("pick" to it) } ?: emptyMap(), screen = last.screen, why = "search and open the result")
+            last.type == StepType.GOAL && last.goal == "search" && pick != null -> last.copy(args = mapOf("pick" to pick))
+            else -> return
+        }
+    }
+
+    /** True while the last step is typing or a search goal (the next screen change belongs to the search). */
+    val inSearch: Boolean get() = steps.lastOrNull()?.let { it.type == StepType.TYPE || (it.type == StepType.GOAL && it.goal == "search") } == true
+
     /** The user pressed Enter/search on the keyboard after typing (no event for that — inferred from the next screen). */
     fun markSubmit() {
         val i = steps.lastIndex
@@ -45,7 +64,7 @@ class Recorder(
     }
 
     /** The query typed just before, if the last step was typing — used to name a picked search result. */
-    val lastTyped: String? get() = steps.lastOrNull()?.takeIf { it.type == StepType.TYPE }?.text
+    val lastTyped: String? get() = steps.lastOrNull()?.takeIf { it.type == StepType.TYPE || it.goal == "search" }?.text
 
     fun onTap(target: Target, screen: Screen) {
         val last = steps.lastOrNull()
@@ -101,7 +120,7 @@ fun Step.describe(): String {
         StepType.TYPE -> "type \"$text\" into ${target?.label ?: target?.id ?: "field"}" + if (submit) " + Enter" else ""
         StepType.TAP -> "tap " + (target?.label ?: target?.key?.value ?: "?") +
             (target?.key?.takeIf { it.value != target.label }?.let { " (${it.by.name.lowercase()}: ${it.value})" } ?: "")
-        StepType.GOAL -> "$goal $args"
+        StepType.GOAL -> if (goal == "search") "search \"$text\"" + (args["pick"]?.let { " and open \"$it\"" } ?: "") else "$goal $args"
     }
     return if (noise) "(mistake?) $what" else what
 }

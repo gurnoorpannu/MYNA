@@ -227,18 +227,12 @@ class MynaService : AccessibilityService(), Device {
         val screen = screenOf(root, pkg)
         val prev = prevSettled
         if (prev != null && rec.steps.size == stepsAtPrevSettle && screen.title != prev.second.title) {
-            // After typing, the pick must match the query ("dominos" → "Domino's Pizza", not "Pizza Bite House").
             val query = rec.lastTyped
-            val tapped = Identity.inferTap(prev.first, root, query)
-            if (query != null && tapped == null && Identity.showsQuery(root, query)) {
-                rec.markSubmit()   // results page still shows the query → keyboard Enter, not a tap
-            } else if (tapped != null) {
-                rec.onInferredTap(Identity.target(tapped, prev.first, rec.spoken), prev.second)
+            if (rec.inSearch && query != null) {
+                // Typed, then landed somewhere new without a visible tap: it's a search. Name where we landed.
+                rec.onSearchLanded(Identity.pickedResult(root, query))
             } else {
-                // List invisible to accessibility (Compose): name the pick from the new screen; replay finds it by OCR.
-                rec.lastTyped?.let { Identity.pickedResult(root, it) }?.let { name ->
-                    rec.onInferredTap(Target(label = name, key = UniqueKey(KeyKind.OCR, name)), prev.second)
-                }
+                Identity.inferTap(prev.first, root)?.let { rec.onInferredTap(Identity.target(it, prev.first, rec.spoken), prev.second) }
             }
         }
         prevSettled = root to screen

@@ -66,9 +66,21 @@ class Executor(
         return log
     }
 
-    /** Done rule: only a hard rule (the gate) confirms the payment screen — never the AI's word. */
+    /**
+     * Done rule: only a hard rule (the gate) confirms the payment screen — never the AI's word.
+     * Recipes that end at payment get up to 3 "towards checkout" taps (View Cart, Checkout…) first:
+     * the last hop is often a tap the app never reported while teaching. Every one goes through the gate.
+     */
     private suspend fun finish(recipe: Recipe, log: RunLog) {
-        val (root, pkg) = device.screen() ?: throw Stop(Outcome.FAILED, "screen unreadable at the end")
+        var (root, pkg) = device.screen() ?: throw Stop(Outcome.FAILED, "screen unreadable at the end")
+        if (recipe.end == End.PAYMENT_SCREEN) repeat(3) {
+            if (SafetyGate.check(root, pkg) != null) return@repeat
+            val next = root.walk().firstOrNull { n -> n.visible && n.clickable && n.walk().any { c -> c.label?.let(CHECKOUT::containsMatchIn) == true } }
+                ?: return@repeat
+            log.steps += StepLog(log.steps.size + 1, "tap ${next.walk().mapNotNull { it.label }.firstOrNull { CHECKOUT.containsMatchIn(it) }}", "ok", note = "towards checkout")
+            if (device.actor.tap(next, root, pkg) !is GatedActor.Result.Done) return@repeat
+            device.screen()?.let { root = it.first; pkg = it.second }
+        }
         val block = SafetyGate.check(root, pkg)
         when {
             block != null -> { log.outcome = Outcome.HANDED_OFF; log.reason = block.reason; device.actor.handOff(block) }
@@ -86,7 +98,10 @@ class Executor(
             }
             StepType.KEY -> { device.key(step.key!!); device.screen(); sl.status = "ok" }
             StepType.TAP, StepType.TYPE -> act(step, slots, sl)
-            StepType.GOAL -> { sl.status = "skipped"; sl.note = "goal ${step.goal} not built yet" }   // Phase 6
+            StepType.GOAL -> when (step.goal) {
+                "search" -> search(step, slots, sl)
+                else -> { sl.status = "skipped"; sl.note = "goal ${step.goal} not built yet" }   // Phase 6
+            }
         }
     }
 
@@ -148,6 +163,57 @@ class Executor(
         }
     }
 
+    /**
+     * Universal search (design §4.5): type the query + Enter, then tap through results until we land on
+     * a page that shows [pick] as a heading rather than as a list row. Rows without accessible text → OCR.
+     */
+    private suspend fun search(step: Step, slots: Map<String, String>, sl: StepLog) {
+        val query = Slots.fill(step.text, slots).orEmpty()
+        val pick = Slots.fill(step.args["pick"], slots)
+        val start = device.now()
+        // 1. Get a search field on screen and type into it.
+        var typed = false
+        for (attempt in 0 until 3) {
+            val (root, pkg) = device.screen() ?: throw Stop(Outcome.FAILED, "screen unreadable")
+            SafetyGate.check(root, pkg)?.let { device.actor.handOff(it); throw Stop(Outcome.HANDED_OFF, it.reason) }
+            checkLang(root, step)
+            val field = step.target?.let { Finder.find(root, it)?.node?.takeIf { n -> n.editable } }
+                ?: root.walk().firstOrNull { it.visible && it.editable }
+            if (field != null) {
+                if (device.actor.type(field, query, root, pkg, submit = true) !is GatedActor.Result.Done)
+                    throw Stop(Outcome.FAILED, "couldn't type \"$query\" into the search box")
+                typed = true; break
+            }
+            Identity.searchBar(root)?.let { device.actor.tap(it, root, pkg) } ?: break
+        }
+        if (!typed) throw Stop(Outcome.STUCK, "no search box found for \"$query\"")
+        if (pick == null) { sl.status = "ok"; return }
+
+        // 2. Hop through results (suggestions → results → page) until pick is a heading, not a row.
+        val want = Identity.loose(pick)
+        var closedPopup = false
+        for (hop in 0 until 5) {
+            if (device.now() - start > stepTimeoutMs) break
+            val (root, pkg) = device.screen() ?: throw Stop(Outcome.FAILED, "screen unreadable")
+            SafetyGate.check(root, pkg)?.let { device.actor.handOff(it); throw Stop(Outcome.HANDED_OFF, it.reason) }
+            val matches = root.walk().filter { it.visible && !it.editable && it.label?.let { l -> Identity.loose(l).contains(want) } == true }.toList()
+            val rows = matches.filter { Identity.listItem(it) != null }.sortedWith(
+                compareBy({ if (Identity.loose(it.label!!) == want) 0 else 1 }, { it.t }))
+            val heading = matches.any { Identity.listItem(it) == null }
+            val tapTarget = rows.firstOrNull()?.let(Finder::tappable)
+                ?: if (heading && hop > 0) null else ocrFind(com.example.myna_mimicyourinteractionsautomate.recipe.Target(label = pick))
+            if (tapTarget == null) {
+                if (heading) { sl.status = "ok"; sl.note = "opened \"$pick\" after $hop tap(s)"; return }
+                // Pop-up over the results/page: close-type buttons only (T7).
+                Finder.closeButton(root)?.takeIf { !closedPopup }?.let { closedPopup = true; device.actor.tap(it, root, pkg) }
+                continue   // results still loading
+            }
+            sl.level = if (tapTarget.cls == "OcrText") 4 else 1
+            if (device.actor.tap(tapTarget, root, pkg) is GatedActor.Result.Blocked) throw Stop(Outcome.HANDED_OFF, "blocked while opening $pick")
+        }
+        throw Stop(Outcome.STUCK, "searched \"$query\" but couldn't open \"$pick\"")
+    }
+
     /** Wait for the screen to settle and compare with the demo's next screen. A mismatch is noted, not fatal: the next step's finder decides. */
     private suspend fun verify(step: Step, sl: StepLog) {
         val expected = step.next ?: return
@@ -159,12 +225,16 @@ class Executor(
 
     /** T10: stop with a specific reason instead of tapping around. */
     private fun checkStuck(root: UiNode, step: Step, signature: String, seen: MutableMap<String, Int>, start: Long) {
-        if (step.screen?.lang == "en" && Identity.lang(root) == "hi")
-            throw Stop(Outcome.STUCK, "the app is showing Hindi but I learned this in English")
+        checkLang(root, step)
         val n = (seen[signature] ?: 0) + 1
         seen[signature] = n
         if (n > SAME_SCREEN_LIMIT) throw Stop(Outcome.STUCK, "the same screen came back $SAME_SCREEN_LIMIT times without progress")
         if (device.now() - start > stepTimeoutMs) throw Stop(Outcome.STUCK, "no progress for ${stepTimeoutMs / 1000} seconds")
+    }
+
+    private fun checkLang(root: UiNode, step: Step) {
+        if (step.screen?.lang == "en" && Identity.lang(root) == "hi")
+            throw Stop(Outcome.STUCK, "the app is showing Hindi but I learned this in English")
     }
 
     /** Last resort for elements with no accessible text (Zomato's Compose suggestions): read the pixels. */
@@ -183,6 +253,7 @@ class Executor(
 
     companion object {
         const val MAX_SCROLLS = 5
+        private val CHECKOUT = Regex("^(view cart|go to cart|checkout|proceed to checkout|proceed to buy|continue to checkout)\\b", RegexOption.IGNORE_CASE)
         const val SAME_SCREEN_LIMIT = 3 + MAX_SCROLLS + 2   // scrolls/pop-up retries legitimately revisit a screen
         private val OCR_KEYS = setOf(KeyKind.OCR, KeyKind.LABEL, KeyKind.CHILD_TEXT, KeyKind.NEAR_TEXT)
     }
