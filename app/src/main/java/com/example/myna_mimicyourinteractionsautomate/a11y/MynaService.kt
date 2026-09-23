@@ -98,6 +98,7 @@ class MynaService : AccessibilityService(), Device {
     private var awaitingApp: String? = null      // set during clean start
     private var prevSettled: Pair<UiNode, Screen>? = null
     private var stepsAtPrevSettle = 0
+    private val sheetChoices = linkedSetOf<String>()   // options seen selected while the current sheet was open (user may scroll)
     private val activityOf = mutableMapOf<String, String>()
     private var overlay: Button? = null
     private var handOffView: TextView? = null
@@ -211,6 +212,7 @@ class MynaService : AccessibilityService(), Device {
         val rec = recorder ?: return
         val (root, pkg) = captureFront() ?: return
         if (pkg == packageName || pkg == launcherPkg || pkg in IGNORED_PACKAGES) return
+        if (Identity.isModal(root)) sheetChoices += Identity.selectedOptions(root) else sheetChoices.clear()
         val screen = inferMissedTap(rec, root, pkg)
         rec.onScreen(screen, Identity.compact(root))
         // Teaching ends by itself at the payment/credential screen, before the user can tap "Place Order".
@@ -227,7 +229,8 @@ class MynaService : AccessibilityService(), Device {
         val lastWasBack = rec.steps.lastOrNull()?.key == SystemKey.BACK
         if (prev != null && rec.steps.size == stepsAtPrevSettle && !lastWasBack &&
             Identity.isModal(prev.first) && !Identity.isModal(root)) {
-            rec.onSheetConfirmed(prev.second)
+            rec.onSheetConfirmed(prev.second, sheetChoices)
+            sheetChoices.clear()
         } else if (prev != null && rec.steps.size == stepsAtPrevSettle && screen.title != prev.second.title) {
             val query = rec.lastTyped
             if (rec.inSearch && query != null) {

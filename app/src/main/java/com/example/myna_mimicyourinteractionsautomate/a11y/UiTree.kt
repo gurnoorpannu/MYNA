@@ -21,6 +21,8 @@ object UiTree {
             editable = n.isEditable,
             scrollable = n.isScrollable,
             password = n.isPassword,
+            checkable = n.isCheckable,
+            checked = n.isChecked,
             visible = n.isVisibleToUser,
             children = kids,
         ).also { it.live = n }

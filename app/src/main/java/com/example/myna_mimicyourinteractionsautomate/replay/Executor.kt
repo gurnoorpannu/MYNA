@@ -101,7 +101,7 @@ class Executor(
             StepType.TAP, StepType.TYPE -> act(step, slots, sl)
             StepType.GOAL -> when (step.goal) {
                 "search" -> search(step, slots, sl)
-                "confirm_sheet" -> confirmSheet(sl)
+                "confirm_sheet" -> confirmSheet(sl, step.args["choices"]?.split(com.example.myna_mimicyourinteractionsautomate.record.Recorder.CHOICE_SEP).orEmpty())
                 else -> { sl.status = "skipped"; sl.note = "goal ${step.goal} not built yet" }   // Phase 6
             }
         }
@@ -217,8 +217,9 @@ class Executor(
     }
 
     /** Press the open sheet's main button (OCR "Add item ₹109", else its blank button box). Done when the sheet is gone. */
-    private suspend fun confirmSheet(sl: StepLog) {
+    private suspend fun confirmSheet(sl: StepLog, choices: List<String>) {
         device.pause(SHEET_ANIMATION_MS)   // sheets slide in; positions read mid-animation miss the button
+        selectChoices(choices, sl)
         for (attempt in 0 until 3) {
             val (root, pkg) = device.screen() ?: throw Stop(Outcome.FAILED, "screen unreadable")
             SafetyGate.check(root, pkg)?.let { device.actor.handOff(it); throw Stop(Outcome.HANDED_OFF, it.reason) }
@@ -234,6 +235,27 @@ class Executor(
             device.pause(SHEET_ANIMATION_MS)
         }
         throw Stop(Outcome.STUCK, "the options sheet didn't close")
+    }
+
+    /** Habit defaults: make the sheet show the same options as the demo (required groups block "Add item" otherwise). */
+    private suspend fun selectChoices(choices: List<String>, sl: StepLog) {
+        val picked = mutableListOf<String>()
+        for (choice in choices) {
+            var scrolls = 0
+            while (true) {
+                val (root, pkg) = device.screen() ?: return
+                SafetyGate.check(root, pkg)?.let { device.actor.handOff(it); throw Stop(Outcome.HANDED_OFF, it.reason) }
+                val toggle = Identity.optionToggle(root, choice)
+                if (toggle != null) {
+                    if (!toggle.checked) { device.actor.tap(Identity.optionRow(toggle)?.let(Finder::tappable) ?: toggle, root, pkg); picked += choice }
+                    break
+                }
+                val list = root.walk().filter { it.visible && it.scrollable }.maxByOrNull { (it.r - it.l) * (it.b - it.t) }
+                if (list == null || scrolls++ >= 3) break          // not on this sheet: leave the app's default
+                device.scroll(list, forward = true)
+            }
+        }
+        if (picked.isNotEmpty()) sl.note = "selected ${picked.joinToString()}"
     }
 
     /** Wait for the screen to settle and compare with the demo's next screen. A mismatch is noted, not fatal: the next step's finder decides. */

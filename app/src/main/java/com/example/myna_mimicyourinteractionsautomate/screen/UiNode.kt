@@ -16,6 +16,8 @@ class UiNode(
     val editable: Boolean = false,
     val scrollable: Boolean = false,
     val password: Boolean = false,
+    val checkable: Boolean = false,
+    val checked: Boolean = false,
     val visible: Boolean = true,
     val children: List<UiNode> = emptyList(),
 ) {

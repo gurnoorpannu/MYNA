@@ -148,6 +148,18 @@ object Identity {
             n.cls?.let { it.contains("BottomSheet") || it.endsWith("Dialog") } == true)
     }
 
+    /** Options currently selected on screen (radio/checkbox rows): the row's title, e.g. "New Hand Tossed", "Regular". */
+    fun selectedOptions(root: UiNode): List<String> = root.walk().filter { it.visible && it.checkable && it.checked }
+        .mapNotNull { n -> optionRow(n)?.let(::primaryText) }.distinct().toList()
+
+    /** The row a radio/checkbox belongs to (Zomato: ViewGroup [title, RadioButton]). */
+    fun optionRow(n: UiNode): UiNode? = (sequenceOf(n) + n.ancestors().take(3)).firstOrNull { primaryText(it) != null }
+
+    /** The radio/checkbox of the option row titled [title], if visible. */
+    fun optionToggle(root: UiNode, title: String): UiNode? = root.walk().firstOrNull { n ->
+        n.visible && n.checkable && optionRow(n)?.let(::primaryText)?.let(::norm) == norm(title)
+    }
+
     /**
      * The sheet's main button when it has no text (Zomato's "Add item ₹109" is a blank ViewGroup the app draws on):
      * the widest non-clickable, text-less box inside a "*button*" container in the bottom quarter.
