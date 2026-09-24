@@ -81,4 +81,12 @@ class IntentTest {
         assertEquals("add a laptop stand to my Amazon Shopping Cart",
             com.example.myna_mimicyourinteractionsautomate.replay.Slots.fill("add a {product} for my {item} to my Amazon Shopping Cart", mapOf("product" to "laptop stand", "item" to "")))
     }
+
+    @Test fun homeAutomationWinsANearTieWithAnOldDuplicate() = runBlocking {
+        Llm.mock = true; Llm.canned.clear()
+        val old = zomato.copy(id = "old", summary = "Order a {item} pizza from {query} on Zomato")
+        val home = zomato.copy(id = "home", golden = true)
+        val top = IntentMatcher.rank("order a margherita from dominos", listOf(old, home)).first()
+        assertEquals("home", top.recipe.id)
+    }
 }

@@ -42,14 +42,21 @@ object IntentMatcher {
         return (listOf(r.utterance) + templates.map { Slots.fill(it, demo)!! } + templates.map { Slots.fill(it, plain)!! }).distinct()
     }
 
-    suspend fun rank(utterance: String, recipes: List<Recipe>): List<Match> = runCatching {
+    /** Home (starred) automations are the ones the user trusts: a small boost, and they win near-ties. */
+    const val HOME_BOOST = 0.04f
+
+    suspend fun rank(utterance: String, recipes: List<Recipe>): List<Match> = rawRank(utterance, recipes)
+        .map { if (it.recipe.golden) it.copy(score = (it.score + HOME_BOOST).coerceAtMost(1f)) else it }
+        .sortedWith(compareByDescending<Match> { it.score }.thenByDescending { it.recipe.golden })
+
+    private suspend fun rawRank(utterance: String, recipes: List<Recipe>): List<Match> = runCatching {
         val u = embed(utterance)
         recipes.map { r -> Match(r, texts(r).maxOf { Llm.cosine(u, embed(it)) }) }
     }.getOrElse {
         // Embeddings unavailable (quota/offline): word overlap, scaled so a close paraphrase still clears RUN.
         val u = Llm.hashEmbed(utterance)
         recipes.map { r -> Match(r, (texts(r).maxOf { Llm.cosine(u, Llm.hashEmbed(it)) } * 0.6f + 0.35f).coerceAtMost(1f)) }
-    }.sortedByDescending { it.score }
+    }
 
     private val META = Regex("\\b(did (it|that|the (last )?(run|order|task))|last run|what happened|did you (finish|manage|do it)|status)\\b", RegexOption.IGNORE_CASE)
 

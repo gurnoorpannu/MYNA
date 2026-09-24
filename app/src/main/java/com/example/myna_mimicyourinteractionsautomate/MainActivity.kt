@@ -655,7 +655,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun run(r: Recipe, values: Map<String, String>) {
-        myna("On it: " + Slots.fill(r.summary ?: r.utterance, values))
+        // Say which automation was picked, so a wrong pick is obvious straight away.
+        myna("On it: " + Slots.fill(r.summary ?: r.utterance, values) + if (r.golden) "" else " (using “${r.utterance}”)")
         replay(listOf(r), values)
     }
 
