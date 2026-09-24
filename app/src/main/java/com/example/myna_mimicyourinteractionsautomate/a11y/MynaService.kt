@@ -382,7 +382,10 @@ class MynaService : AccessibilityService(), Device {
 
     /** Compile the demo into a recipe (one AI call), save it, and confirm out loud (T1). */
     private suspend fun learn(recording: com.example.myna_mimicyourinteractionsautomate.recipe.Recording) {
-        val res = com.example.myna_mimicyourinteractionsautomate.compile.Compiler.compile(recording)
+        // New tasks go straight to Home (voice only searches Home); re-teaching the same command replaces the old one there.
+        val res = com.example.myna_mimicyourinteractionsautomate.compile.Compiler.compile(recording, golden = true)
+        val same = { a: String -> Identity.loose(a) == Identity.loose(recording.utterance) }
+        recipes.all().filter { it.golden && it.app == recording.app && same(it.utterance) }.forEach { recipes.save(it.copy(golden = false)) }
         recipes.save(res.recipe)
         lastCompile = res
         val spoken = com.example.myna_mimicyourinteractionsautomate.replay.Slots.fill(

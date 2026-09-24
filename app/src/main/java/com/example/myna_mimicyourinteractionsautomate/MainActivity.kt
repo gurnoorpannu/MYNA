@@ -637,7 +637,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private suspend fun command(text: String) {
-        val list = Recipes(File(getExternalFilesDir(null), "recipes")).all()
+        // Voice only looks at Home automations (the tested ones); all recipes only if Home is empty.
+        val list = Recipes(File(getExternalFilesDir(null), "recipes")).all().let { all -> all.filter { it.golden }.ifEmpty { all } }
         thinking = true
         val d = runCatching { IntentMatcher.decide(text, list) }.getOrElse { myna("Sorry, I couldn't understand that (${it.message})."); thinking = false; return }
         thinking = false
