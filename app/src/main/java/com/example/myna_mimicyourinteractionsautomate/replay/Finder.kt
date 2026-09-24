@@ -42,7 +42,8 @@ object Finder {
         if (hits.isEmpty() && key.loose) {
             // Blank values are what the user SAID ("Farmhouse"); the screen says "Farmhouse Pizza".
             val want = Identity.loose(key.value)
-            hits = hitsFor { Identity.loose(it).contains(want) }
+            val one = Identity.loose(com.example.myna_mimicyourinteractionsautomate.intent.Extras.singular(key.value))   // "margheritas"
+            hits = hitsFor { Identity.loose(it).contains(want) }.ifEmpty { hitsFor { Identity.loose(it).contains(one) } }
             if (hits.size > 1) hits = hits.sortedBy { n -> anchorText(n, key.by)?.let { a -> (if (Identity.loose(a).startsWith(want)) 0 else 1000) + a.length } ?: 9999 }.take(1)
             how = "${key.by.name.lowercase()}~${key.value}"
         }

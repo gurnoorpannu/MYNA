@@ -144,10 +144,13 @@ object IntentMatcher {
         val top = ranker(utterance, recipes).firstOrNull()
         if (top == null || top.score < CONFIRM) return Decision.Unknown(utterance)
         val r = top.recipe
-        val fill = fill(utterance, r)
+        // Quantity / address are never blanks of the recipe: parsed separately, passed to the executor.
+        val extras = Extras.parse(utterance)
+        val fill = fill(extras.rest, r)
         val last = r.slots.mapValues { it.value.value ?: it.value.default.orEmpty() }
-        val values = last + fill.values
-        val summary = Slots.fill(r.summary ?: r.utterance, values)!!
+        val values = last + fill.values + listOfNotNull(extras.qty?.takeIf { it > 1 }?.let { "qty" to "$it" }, extras.address?.let { "address" to it })
+        val summary = Slots.fill(r.summary ?: r.utterance, values)!! +
+            (values["qty"]?.let { " (×$it)" } ?: "") + (values["address"]?.let { ", deliver to $it" } ?: "")
         // T13: vague ("Order pizza") or only a middling match → offer the closest with last time's values.
         if (top.score < RUN || (fill.said.isEmpty() && r.slots.isNotEmpty() && top.score < 0.8f)) {
             val asked = if (fill.said.isEmpty()) Slots.fill(r.summary ?: r.utterance, last)!! else summary
