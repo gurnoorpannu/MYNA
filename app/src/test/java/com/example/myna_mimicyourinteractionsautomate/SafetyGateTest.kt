@@ -59,6 +59,17 @@ class SafetyGateTest {
         assertNull(SafetyGate.check(pdp, "in.amazon.mShop.android.shopping"))
     }
 
+    @Test fun addressPickIsTheOnlyExceptionAndOnlyOnPlaceOrderScreens() {
+        val chip = UiNode(clickable = true, children = listOf(text("Delivering to Home")))
+        val cart = screen(chip, UiNode(id = "cv_checkout_container", clickable = true, children = listOf(text("Place Order"))))
+        val placeOrder = cart.children[1]
+        assertNull(SafetyGate.checkTap(chip, cart, "com.application.zomato", addressPick = true))                    // allowed
+        assertEquals(Kind.FINAL_ORDER, SafetyGate.checkTap(chip, cart, "com.application.zomato")?.kind)              // not without the flag
+        assertEquals(Kind.FINAL_ORDER, SafetyGate.checkTap(placeOrder, cart, "com.application.zomato", addressPick = true)?.kind) // never Place Order
+        val work = UiNode(clickable = true, children = listOf(text("Work")))
+        assertEquals(Kind.PAYMENT, SafetyGate.checkTap(work, screen(work, text("UPI"), text("Credit card"), text("Net Banking")), "x", addressPick = true)?.kind)
+    }
+
     @Test fun tapLevelBlocksCommitTargetsEvenOnSafeScreens() {
         val pay = button("Pay now")
         assertEquals(Kind.FINAL_ORDER, SafetyGate.checkTap(pay, screen(text("Cart")), "x")?.kind)

@@ -497,7 +497,8 @@ class MynaService : AccessibilityService(), Device {
             val logs = mutableListOf<RunLog>()
             for (r in list) {
                 if (stopRequested) break
-                val log = Executor(this@MynaService, onStep = { st, n -> runOverlay?.text = "▶ ${st.index}/$n ${st.what.take(28)}  ■ Stop" })
+                val log = Executor(this@MynaService, onStep = { st, n -> runOverlay?.text = "▶ ${st.index}/$n ${st.what.take(28)}  ■ Stop" },
+                    aiHelper = !com.example.myna_mimicyourinteractionsautomate.llm.Llm.mock)
                     .run(r, slots)
                 logs += log
                 saveRun(log)

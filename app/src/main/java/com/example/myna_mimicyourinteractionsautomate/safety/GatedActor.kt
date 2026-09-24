@@ -21,8 +21,8 @@ class GatedActor(
     /** Give control to the user (banner + voice) without trying anything first. */
     fun handOff(block: SafetyGate.Block) = onBlocked(block)
 
-    fun tap(target: UiNode, root: UiNode, pkg: String?): Result {
-        SafetyGate.checkTap(target, root, pkg)?.let { onBlocked(it); return Result.Blocked(it) }
+    fun tap(target: UiNode, root: UiNode, pkg: String?, addressPick: Boolean = false): Result {
+        SafetyGate.checkTap(target, root, pkg, addressPick)?.let { if (!addressPick) onBlocked(it); return Result.Blocked(it) }
         return if (click(target)) Result.Done else Result.Failed
     }
 

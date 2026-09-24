@@ -82,14 +82,24 @@ object SafetyGate {
         return null
     }
 
-    /** Tap-level check: the screen must be safe AND the target itself must not commit/log in. */
-    fun checkTap(target: UiNode, root: UiNode, pkg: String?): Block? {
-        check(root, pkg)?.let { return it }
+    /**
+     * Tap-level check: the screen must be safe AND the target itself must not commit/log in.
+     * [addressPick] (T6): on a Place Order screen — never a payment/credential one — the address picker may be used,
+     * because choosing "Work" commits nothing; the Place Order button itself stays blocked by the target check.
+     */
+    fun checkTap(target: UiNode, root: UiNode, pkg: String?, addressPick: Boolean = false): Block? {
         val t = allText(target)
+        check(root, pkg)?.let { b ->
+            val allowed = addressPick && b.kind == Kind.FINAL_ORDER && ADDRESS_TAP.containsMatchIn(t) && !COMMIT.containsMatchIn(t)
+            if (!allowed) return b
+        }
         if (COMMIT.containsMatchIn(t)) return Block(Kind.FINAL_ORDER, "target is \"${COMMIT.find(t)!!.value}\"")
         if (target.label?.let(LOGIN_BUTTON::matches) == true) return Block(Kind.LOGIN, "target is a login button")
         return null
     }
+
+    private val ADDRESS_TAP = Regex("\\b(deliver(ing|y)? (to|at)|delivery address|change|select (an? )?address|saved address(es)?|" +
+        "add (new )?address|home|work|office|other|use this address|deliver here|confirm (location|address))\\b", RegexOption.IGNORE_CASE)
 
     /** Layer 2 (rules for now, AI flag later): allowed, but ask the user first. */
     private val RISKY = Regex("\\b(remove|delete|clear (cart|all)|empty cart|cancel (order|booking)|unsubscribe|logout|log out|sign out)\\b",

@@ -61,6 +61,10 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
                     t(c, 910 + i * 160), UiNode(cls = "RadioButton", clickable = true, checkable = true, checked = crust == c, l = 940, t = 900 + i * 160, r = 1047, b = 990 + i * 160)))
             }),
             UiNode(id = "button_container", t = 1990, b = 2200, r = 1080, children = listOf(
+                UiNode(id = "ll_root", t = 2030, b = 2165, r = 326, children = listOf(
+                    UiNode(text = "\ue890", id = "button_remove", clickable = true, t = 2030, b = 2165, r = 131),
+                    UiNode(text = "$sheetQty", id = "text_view_title", t = 2030, b = 2165, l = 131, r = 228),
+                    UiNode(text = "\ue922", id = "button_add", clickable = true, t = 2030, b = 2165, l = 228, r = 326))),
                 UiNode(cls = "ViewGroup", l = 360, t = 2025, r = 1046, b = 2171)))))
         // Results page (after Enter or a suggestion tap): accessible rows, the restaurant twice.
         "results" -> UiNode(cls = "FrameLayout", b = 2400, children = listOf(
@@ -75,6 +79,7 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
                 UiNode(text = "Not now", cls = "Button", clickable = true, t = 1300, b = 1360)))
         else UiNode(cls = "FrameLayout", b = 2400, children = listOfNotNull(
             UiNode(desc = "Domino's Pizza", id = "title", t = 100, b = 150),
+            if (closed) t("Currently closed · Opens at 11 AM", 170) else null,
             UiNode(id = "button1", clickable = true, t = 200, b = 260, children = listOf(t("Search", 210))),
             if (menuSearch != null) UiNode(id = "edittext", text = "Search in Domino's Pizza", editable = true, clickable = true, t = 300, b = 380) else null,
             UiNode(cls = "RecyclerView", scrollable = true, t = 400, b = 2400, children = listOf(
@@ -85,7 +90,14 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
         "coupon" -> UiNode(cls = "FrameLayout", b = 2400, children = listOf(t("Coupon not applied", 900), t("Save ₹50 with HUNGRY50", 960),
             UiNode(text = "Apply coupon", cls = "Button", clickable = true, t = 1100, b = 1160),
             UiNode(id = "coupon_close", desc = "Close", clickable = true, t = 800, b = 860)))
-        "cart" -> UiNode(cls = "FrameLayout", b = 2400, children = listOf(t("Domino's Pizza", 100), t(cart.joinToString(), 300),
+        // The cart: "Delivering to Home" opens a picker sheet with the saved addresses.
+        "cart" -> if (addressPicker) UiNode(cls = "FrameLayout", b = 2400, children = listOf(UiNode(id = "touch_outside", clickable = true, b = 2400, r = 1080),
+            t("Select an address", 1400),
+            UiNode(clickable = true, t = 1500, b = 1600, children = listOf(t("Home", 1510), t("50 Harkishan Garden", 1550))),
+            UiNode(clickable = true, t = 1650, b = 1750, children = listOf(t("Work", 1660), t("Ranjit Avenue", 1700))),
+            UiNode(id = "cv_checkout_container", clickable = true, t = 2200, b = 2400, children = listOf(t("Place Order", 2260)))))
+        else UiNode(cls = "FrameLayout", b = 2400, children = listOf(t("Domino's Pizza", 100), t(cart.joinToString(), 300),
+            UiNode(id = "address_chip", clickable = true, t = 2000, b = 2080, children = listOf(t("Delivering to $address", 2010))),
             UiNode(id = "cv_checkout_container", clickable = true, t = 2200, b = 2400, children = listOf(t("₹299", 2210), t("Place Order", 2260)))))
         else -> error(state)
     }
@@ -106,6 +118,9 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
     override suspend fun pause(ms: Long) { clock += ms; if (userTapsSheet && prompts.isNotEmpty() && state == "sheet" && crust != null) { cart += sheetFor!!; state = "menu" } }
     var couponPopup = false
     var menuSearch: String? = null    // in-menu search box open (null = closed), with its text
+    var sheetQty = 1                  // the sheet's "− 1 +" stepper
+    var address = "Home"; var addressPicker = false
+    var closed = false
     var ignoresA11yTaps = false       // Zomato's real "Add item": only a finger works
     var userTapsSheet = false
     val prompts = mutableListOf<String>()
@@ -122,11 +137,15 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
             n.cls == "OcrText" && n.text == "Domino's Pizza" -> state = "results"
             n.id == "top_row" || n.id == "res_card" -> state = "menu"
             n.id == "pizza_hut" -> error("opened the wrong restaurant!")
-            n.id == "button_add" || n.id == "text_view_title" -> { sheetFor = n.parent!!.children[2].text!!; state = "sheet" }
+            state == "sheet" && n.id == "button_add" -> sheetQty++
+            state == "sheet" && n.id == "button_remove" -> sheetQty = maxOf(1, sheetQty - 1)
+            n.id == "button_add" || n.id == "text_view_title" -> { sheetFor = n.parent!!.children[2].text!!; sheetQty = 1; state = "sheet" }
+            n.id == "address_chip" -> addressPicker = true
+            addressPicker && n.children.firstOrNull()?.text in setOf("Home", "Work") -> { address = n.children[0].text!!; addressPicker = false }
             state == "sheet" && n.cls == "ViewGroup" && n.children.firstOrNull()?.text != null && n.t in 900..1100 -> crust = n.children[0].text
             // Add item only works once the required crust is chosen.
             (n.cls == "OcrText" && n.text!!.startsWith("Add item")) || (state == "sheet" && n.l == 360 && n.t == 2025) ->
-                if (crust != null && !ignoresA11yTaps) { cart += sheetFor!!; state = "menu" }
+                if (crust != null && !ignoresA11yTaps) { repeat(sheetQty) { cart += sheetFor!! }; state = "menu" }
             n.id == "container" -> state = if (couponPopup) "coupon" else "cart"
             n.id == "coupon_close" -> state = "cart"
             n.id == "cv_checkout_container" -> error("tapped Place Order!")
@@ -185,6 +204,29 @@ class ExecutorTest {
         val log = Executor(z).run(recipe, demo)
         assertEquals(log.reason, Outcome.HANDED_OFF, log.outcome)
         assertTrue(log.steps.any { it.what.startsWith("close pop-up") })
+    }
+
+    @Test fun t5QuantityIsSetOnTheSheetStepper() = runBlocking {
+        val z = FakeZomato()
+        val log = Executor(z).run(recipe, demo + ("qty" to "2"))
+        assertEquals(log.reason, Outcome.HANDED_OFF, log.outcome)
+        assertEquals(listOf("Margherita Pizza", "Margherita Pizza"), z.cart)
+    }
+
+    @Test fun t6AddressIsSwitchedOnTheCartButPlaceOrderIsNeverTapped() = runBlocking {
+        val z = FakeZomato()
+        val log = Executor(z).run(recipe, demo + ("address" to "Work"))
+        assertEquals(log.reason, Outcome.HANDED_OFF, log.outcome)
+        assertEquals("Work", z.address)
+        assertFalse(z.taps.any { it.contains("checkout") })
+    }
+
+    @Test fun t10ClosedRestaurantStopsWithTheReason() = runBlocking {
+        val z = FakeZomato().apply { closed = true }
+        val log = Executor(z).run(recipe, demo)
+        assertEquals(Outcome.STUCK, log.outcome)
+        assertTrue(log.reason, log.reason!!.contains("Opens at 11 AM"))
+        assertTrue(z.cart.isEmpty())
     }
 
     @Test fun changedItemAddsFarmhouse() = runBlocking {

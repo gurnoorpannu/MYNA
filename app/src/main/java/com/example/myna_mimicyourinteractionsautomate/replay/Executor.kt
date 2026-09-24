@@ -42,7 +42,14 @@ class Executor(
     private val device: Device,
     private val stepTimeoutMs: Long = 30_000,
     private val onStep: (StepLog, Int) -> Unit = { _, _ -> },   // progress for the overlay: (step, total)
+    private val aiHelper: Boolean = false,                      // one AI pick when a step is lost (off in tests)
 ) {
+    // Never-taught extras from the command (T5/T6): quantity and delivery address.
+    private var wantQty = 1
+    private var qtyDone = false
+    private var wantAddress: String? = null
+    private var addressDone = false
+    private var lastTapped: UiNode? = null
 
     private class Stop(val outcome: Outcome, val reason: String) : Exception(reason)
 
@@ -71,6 +78,8 @@ class Executor(
         // Blanks not given fall back to the demo's value / default ("Margherita", qty 1…); given "" = leave it out.
         val slots = recipe.slots.mapNotNull { (k, v) -> (v.value ?: v.default)?.let { k to it } }.toMap() + given
         val log = RunLog(recipe.id, Slots.fill(recipe.summary ?: recipe.utterance, slots)!!, device.now(), slots = slots)
+        wantQty = slots["qty"]?.toIntOrNull()?.coerceIn(1, 20) ?: 1
+        wantAddress = slots["address"]?.takeIf { it.isNotBlank() }
         val steps = recipe.subtasks.flatMap { it.steps }.filter { !it.noise }
         try {
             var retries = 0
@@ -81,7 +90,17 @@ class Executor(
                 val pending = unsubmitted
                 val query = lastQuery
                 while (true) {
-                    try { runStep(step, slots, sl, recipe); break }
+                    try {
+                        // T6: the cart page's "Deliver to …" comes before Proceed/Checkout (Amazon).
+                        if (wantAddress != null && !addressDone && step.type == StepType.TAP &&
+                            (step.target?.label ?: step.target?.key?.value)?.let(CHECKOUT::containsMatchIn) == true) pickAddress(log)
+                        runStep(step, slots, sl, recipe)
+                        // T5: "2 margheritas" → set the count right after the item was added (Zomato sets it in the sheet).
+                        if (wantQty > 1 && !qtyDone && isAddStep(step) && steps.getOrNull(i + 1)?.goal != "confirm_sheet") {
+                            device.pause(800); qtyDone = setQty(wantQty, sl)
+                        }
+                        break
+                    }
                     catch (s: Stop) {
                         // Opened a wrong result (an ad, a store page) and the next step's button isn't there:
                         // go back and open the next-best result instead of giving up.
@@ -146,9 +165,16 @@ class Executor(
             }
             device.screen()?.let { root = it.first; pkg = it.second }
         }
+        // T6 on Zomato: the address is picked on the cart itself (a Place Order screen: only address taps are allowed).
+        if (wantAddress != null && !addressDone) { pickAddress(log); device.screen()?.let { root = it.first; pkg = it.second } }
+        if (wantQty > 1 && !qtyDone) log.reason = "couldn't set the quantity to $wantQty — please change it"
         val block = SafetyGate.check(root, pkg)
         when {
-            block != null -> { log.outcome = Outcome.HANDED_OFF; log.reason = block.reason; device.actor.handOff(block) }
+            block != null -> {
+                log.outcome = Outcome.HANDED_OFF
+                log.reason = listOfNotNull(block.reason, log.reason, if (wantAddress != null && !addressDone) "couldn't switch the address to $wantAddress — please pick it" else null).joinToString("; ")
+                device.actor.handOff(block)
+            }
             recipe.end == End.PAYMENT_SCREEN -> { log.outcome = Outcome.FAILED; log.reason = "all steps done but the payment screen never appeared" }
             else -> log.outcome = Outcome.DONE
         }
@@ -178,6 +204,7 @@ class Executor(
         var scrolls = 0
         var closedPopup = false
         var openedSearch = false
+        var aiTried = false
         val seen = mutableMapOf<String, Int>()
         while (true) {
             if (device.stopRequested) throw Stop(Outcome.STOPPED, "stopped by user")
@@ -188,6 +215,7 @@ class Executor(
             // Safety first: a payment/credential screen ends the run here, zero taps.
             SafetyGate.check(root, pkg)?.let { device.actor.handOff(it); throw Stop(Outcome.HANDED_OFF, it.reason) }
             checkStuck(root, step, screen.signature, seen, start)
+            checkClosed(root)
 
             var found = Finder.find(root, target) ?: ocrFind(target)?.let { Finder.Found(it, 4, "ocr \"${it.label}\"") }
             // Many identical buttons right after a search ("Add to cart" on every Amazon result): use the one
@@ -217,6 +245,7 @@ class Executor(
                         else device.actor.tap(found.node, root, pkg)
                 when (r) {
                     GatedActor.Result.Done -> {
+                        lastTapped = found!!.node
                         if (step.type == StepType.TYPE && !step.submit) unsubmitted = text
                         if (step.type == StepType.TYPE && step.submit) lastQuery = text
                         verify(step, sl); sl.status = "ok"; return
@@ -256,7 +285,15 @@ class Executor(
                 device.scroll(list, forward = target.scrollDir != "up")
                 continue
             }
-            throw Stop(Outcome.STUCK, "couldn't find ${describe(target)} on ${screen.title ?: screen.pkg} after $scrolls scrolls")
+            // Last resort: one AI pick from a short numbered list of what's on screen (never random taps).
+            if (aiHelper && !aiTried) {
+                aiTried = true
+                aiPick(root, step, target)?.let { n -> sl.note = "AI helper picked \"${n.label ?: Identity.primaryText(n) ?: n.id}\""; sl.level = 5
+                    if (device.actor.tap(n, root, pkg) is GatedActor.Result.Done) { device.screen(); sl.status = "ok"; return } }
+            }
+            val soldOut = root.walk().mapNotNull { it.label }.firstOrNull(SOLD_OUT::containsMatchIn)
+            throw Stop(Outcome.STUCK, "couldn't find ${describe(target)} on ${screen.title ?: screen.pkg} after $scrolls scrolls" +
+                (soldOut?.let { " (the screen says \"$it\")" } ?: ""))
         }
     }
 
@@ -319,6 +356,8 @@ class Executor(
     private suspend fun confirmSheet(sl: StepLog, choices: List<String>) {
         device.pause(SHEET_ANIMATION_MS)   // sheets slide in; positions read mid-animation miss the button
         selectChoices(choices, sl)
+        // T5: set the count on the sheet's own stepper, before adding (after, "+" asks to repeat the customisation).
+        if (wantQty > 1 && !qtyDone) qtyDone = setQty(wantQty, sl)
         for (attempt in 0 until 3) {
             val (root, pkg) = device.screen() ?: throw Stop(Outcome.FAILED, "screen unreadable")
             SafetyGate.check(root, pkg)?.let { device.actor.handOff(it); throw Stop(Outcome.HANDED_OFF, it.reason) }
@@ -442,6 +481,96 @@ class Executor(
         if (device.now() - start > stepTimeoutMs) throw Stop(Outcome.STUCK, "no progress for ${stepTimeoutMs / 1000} seconds")
     }
 
+    /** T10: a closed restaurant / shop is a clear stop, not a hunt for buttons that aren't there. */
+    private fun checkClosed(root: UiNode) {
+        root.walk().filter { it.visible }.mapNotNull { it.label }.firstOrNull(CLOSED::containsMatchIn)?.let { line ->
+            throw Stop(Outcome.STUCK, "it's closed right now — the app says \"${line.take(80)}\"")
+        }
+    }
+
+    /** Was this the step that put the item in the cart? ("ADD", "Add to cart", or the options sheet's add). */
+    private fun isAddStep(step: Step) = step.goal == "confirm_sheet" ||
+        (step.target?.label ?: step.target?.key?.value)?.let(ADD_WORD::containsMatchIn) == true
+
+    /**
+     * T5: tap + (or −) on the stepper until its count reads [n]. The stepper = a number with a plus/minus beside it
+     * (Zomato: "− 1 +" with ids button_remove/button_add; Amazon results: − 1 +). Nearest to the last tap wins.
+     */
+    private suspend fun setQty(n: Int, sl: StepLog): Boolean {
+        repeat(n + 4) {
+            val (root, pkg) = device.screen() ?: return false
+            val area = if (Identity.isModal(root)) Identity.sheetRoot(root) else root
+            val steppers = area.walk().filter { it.visible && it.label?.matches(Regex("\\d{1,2}")) == true }.mapNotNull { c ->
+                val box = c.ancestors().take(2).lastOrNull() ?: return@mapNotNull null
+                val plus = box.walk().firstOrNull { it.clickable && it !== c && isPlus(it) } ?: return@mapNotNull null
+                Triple(c.label!!.toInt(), plus, box.walk().firstOrNull { it.clickable && it !== c && isMinus(it) })
+            }.toList()
+            val near = lastTapped
+            val (count, plus, minus) = steppers.minByOrNull { (_, p, _) -> if (near == null) 0 else kotlin.math.abs(p.t - near.t) } ?: return false
+            if (count == n) { sl.note = listOfNotNull(sl.note, "quantity set to $n").joinToString("; "); return true }
+            val btn = (if (count < n) plus else minus) ?: return false
+            if (device.actor.tap(btn, root, pkg) !is GatedActor.Result.Done) return false
+            lastTapped = btn
+            // "+" on a customised dish: "Repeat last customisation?" → Repeat.
+            device.screen()?.let { (r2, p2) ->
+                if (Identity.isModal(r2)) Identity.sheetRoot(r2).walk().firstOrNull { it.visible && it.clickable && it.walk().any { c -> c.label?.let(REPEAT::containsMatchIn) == true } }
+                    ?.let { device.actor.tap(it, r2, p2) }
+            }
+        }
+        return false
+    }
+
+    private fun isPlus(n: UiNode) = n.label == "+" || n.text == "\ue922" ||
+        listOfNotNull(n.id, n.desc).any { Regex("(^|_)(add|plus|incr|increase)", RegexOption.IGNORE_CASE).containsMatchIn(it) && !it.contains("cart", true) }
+    private fun isMinus(n: UiNode) = n.label == "-" || n.label == "−" || n.text == "\ue890" ||
+        listOfNotNull(n.id, n.desc).any { Regex("(^|_)(remove|minus|decr|decrease)", RegexOption.IGNORE_CASE).containsMatchIn(it) }
+
+    /**
+     * T6: switch the delivery address to [wantAddress] ("Work"): open the address picker ("Delivering to Home",
+     * "Deliver to …", "Change") and pick the saved address with that name. Gate-checked in address mode.
+     */
+    private suspend fun pickAddress(log: RunLog) {
+        val name = wantAddress ?: return
+        val names = when (name.lowercase()) { "work", "office" -> listOf("work", "office"); else -> listOf(name.lowercase()) }
+        val named = { l: String -> names.any { Regex("\\b$it\\b", RegexOption.IGNORE_CASE).containsMatchIn(l) } }
+        repeat(5) {
+            val (root, pkg) = device.screen() ?: return
+            val texts = root.walk().filter { it.visible }.toList()
+            // Already delivering there?
+            if (texts.any { n -> n.label?.let { l -> DELIVERING.containsMatchIn(l) && named(l) } == true ||
+                    (n.label?.let(named) == true && n.parent?.walk()?.any { c -> c.label?.let(DELIVERING::containsMatchIn) == true } == true) }) {
+                addressDone = true; log.steps += StepLog(log.steps.size + 1, "deliver to $name", "ok", note = "address set"); return
+            }
+            // Picker open (a sheet/list with the saved addresses): tap the one with that name.
+            val row = texts.firstOrNull { it.clickable && it.walk().any { c -> c.label?.let(named) == true } }
+            val opener = texts.firstOrNull { it.clickable && it.walk().any { c -> c.label?.let { l -> DELIVERING.containsMatchIn(l) || l.equals("change", true) } == true } }
+            val tap = if (row != null && (Identity.isModal(root) || opener == null)) row else opener ?: row ?: return
+            if (device.actor.tap(tap, root, pkg, addressPick = true) !is GatedActor.Result.Done) return
+            // Some apps ask to confirm the picked address.
+            device.screen()?.let { (r2, p2) ->
+                r2.walk().firstOrNull { it.visible && it.clickable && it.label?.let(CONFIRM_ADDRESS::containsMatchIn) == true }?.let { device.actor.tap(it, r2, p2, addressPick = true) }
+            }
+        }
+    }
+
+    /** One AI call: which numbered element does this step (or ask / stuck)? Screen shortened, private data masked. */
+    private suspend fun aiPick(root: UiNode, step: Step, target: com.example.myna_mimicyourinteractionsautomate.recipe.Target): UiNode? {
+        val items = root.walk().filter { it.visible && (it.clickable || it.editable) }.mapNotNull { n ->
+            (n.label ?: Identity.primaryText(n) ?: n.desc ?: n.id)?.let { n to Privacy.mask(it).take(60) }
+        }.take(60).toList()
+        if (items.isEmpty()) return null
+        val prompt = buildString {
+            appendLine("You help replay a phone task. Current step: ${step.describe()}" + (step.why.takeIf { it.isNotBlank() }?.let { " (why: $it)" } ?: ""))
+            appendLine("It usually taps: ${target.label ?: target.key?.value ?: target.id} near ${target.nearby.take(3)}")
+            appendLine("Tappable things on screen:")
+            items.forEachIndexed { i, (n, t) -> appendLine("<button id=$i>${t}</button>" + if (n.editable) " (text field)" else "") }
+            appendLine("Pick the ONE id that does this step. If none fits, action = stuck with a short reason. Never pick pay/order/login buttons.")
+        }
+        val out = runCatching { com.example.myna_mimicyourinteractionsautomate.llm.Llm.llm(prompt, AI_SCHEMA) }.getOrNull() ?: return null
+        if (out.optString("action") != "tap") return null
+        return items.getOrNull(out.optInt("id", -1))?.first   // invalid id → nothing (then the normal stuck message)
+    }
+
     private fun checkLang(root: UiNode, step: Step) {
         if (step.screen?.lang == "en" && Identity.lang(root) == "hi")
             throw Stop(Outcome.STUCK, "the app is showing Hindi but I learned this in English")
@@ -464,6 +593,15 @@ class Executor(
 
     companion object {
         const val MAX_SCROLLS = 5
+        private val CLOSED = Regex("\\b(currently (closed|unavailable|not accepting orders)|closed (now|for (today|now|the day))|opens (at|tomorrow|in)\\b|" +
+            "temporarily closed|not accepting orders|isn.t accepting orders|not delivering to your|outside (the )?delivery area|store is closed)", RegexOption.IGNORE_CASE)
+        private val SOLD_OUT = Regex("\\b(sold out|out of stock|currently unavailable|not available)\\b", RegexOption.IGNORE_CASE)
+        private val ADD_WORD = Regex("^(add|add to (cart|bag|basket))\\b", RegexOption.IGNORE_CASE)
+        private val REPEAT = Regex("^(repeat)\\b", RegexOption.IGNORE_CASE)
+        private val DELIVERING = Regex("\\b(deliver(ing)?|delivery) (to|at)\\b", RegexOption.IGNORE_CASE)
+        private val CONFIRM_ADDRESS = Regex("^(deliver here|use this address|confirm (location|address)|done)\\b", RegexOption.IGNORE_CASE)
+        private val AI_SCHEMA = org.json.JSONObject("""{"title":"helper","type":"object","required":["action"],
+            "properties":{"action":{"type":"string","enum":["tap","stuck"]},"id":{"type":["integer","null"]},"reason":{"type":"string"}}}""")
         private val URLISH = Regex("(^ref=|https?://|sspa|[?&][a-z_]+=)", RegexOption.IGNORE_CASE)
         private val AD = Regex("^(sponsored|ad)\\b|\\bsponsored (ad|information)\\b", RegexOption.IGNORE_CASE)
         const val SHEET_ANIMATION_MS = 800L
