@@ -666,6 +666,11 @@ class MynaService : AccessibilityService(), Device {
                             "sheetButton=${Identity.blankSheetButton(root)?.bounds} gate=${SafetyGate.check(root, pkg)}\n" + debugTree(root))
                         Log.i(TAG, "debug dump → $f")
                     }
+                    "learn" -> {   // re-compile a saved recording into a Home recipe (recovers deleted recipes)
+                        val f = File(File(getExternalFilesDir(null), "recordings"), i.getStringExtra("file") ?: return)
+                        val rec = runCatching { RecipeJson.decodeFromString<com.example.myna_mimicyourinteractionsautomate.recipe.Recording>(f.readText()) }.getOrNull() ?: return
+                        scope.launch { learn(rec); Log.i(TAG, "debug relearn ${f.name} done") }
+                    }
                     "tap" -> {   // bypasses the gate on purpose: dev only, adb only
                         val x = i.getIntExtra("x", 0).toFloat(); val y = i.getIntExtra("y", 0).toFloat()
                         val dur = i.getIntExtra("dur", 80).toLong(); val move = i.getIntExtra("move", 0)
