@@ -365,7 +365,7 @@ class Executor(
         for (attempt in 0 until 3) {
             val (root, pkg) = device.screen() ?: throw Stop(Outcome.FAILED, "screen unreadable")
             SafetyGate.check(root, pkg)?.let { device.actor.handOff(it); throw Stop(Outcome.HANDED_OFF, it.reason) }
-            if (!Identity.isModal(root)) { sl.status = "ok"; if (attempt == 0) sl.note = "no sheet open"; return }
+            if (!Identity.isModal(root)) { sl.status = "ok"; if (attempt == 0) sl.note = "no sheet open"; qtyAfterSheet(sl); return }
             // A labelled button first ("Add item", or "I'll choose" / "Repeat" on a repeat-customisation sheet),
             // then the blank drawn button (exact tree position), then OCR (pixels, can lag an animation).
             val sheet = Identity.sheetRoot(root)   // never the menu's own "ADD" buttons under the sheet
@@ -377,7 +377,7 @@ class Executor(
                 SHEET_BUTTONS.firstNotNullOfOrNull { re -> lines.filter { re.containsMatchIn(it.text) }.maxByOrNull { it.r - it.l } }
             }
             val target = box ?: line?.let { UiNode(text = it.text, cls = "OcrText", clickable = true, l = it.l, t = it.t, r = it.r, b = it.b) }
-                ?: throw Stop(Outcome.STUCK, "couldn't find the button that confirms the options sheet")
+                ?: break   // no button we can see (Zomato draws it blank, or it's still sliding in): ask for a finger
             sl.level = if (box != null) 2 else 4
             sl.note = "pressed ${line?.text?.let { "\"$it\"" } ?: "the sheet's main button ${box!!.bounds}"} (try ${attempt + 1})"
             if (device.actor.tap(target, root, pkg) is GatedActor.Result.Blocked) throw Stop(Outcome.HANDED_OFF, "blocked on the options sheet")
@@ -391,11 +391,16 @@ class Executor(
             while (device.now() < deadline) {
                 if (device.stopRequested) throw Stop(Outcome.STOPPED, "stopped by user")
                 val (root, _) = device.screen() ?: continue
-                if (!Identity.isModal(root)) { sl.status = "ok"; sl.note = "you tapped the sheet's add button (the app ignores accessibility taps there)"; return }
+                if (!Identity.isModal(root)) { sl.status = "ok"; sl.note = "you tapped the sheet's add button (the app ignores accessibility taps there)"; qtyAfterSheet(sl); return }
                 device.pause(500)
             }
         } finally { device.prompt(null) }
         throw Stop(Outcome.STUCK, "the options sheet needs your tap and nobody tapped it within ${USER_TAP_WAIT_MS / 1000} seconds")
+    }
+
+    /** The sheet had no stepper (or it failed): the menu row now shows "− 1 +", so set the count there. */
+    private suspend fun qtyAfterSheet(sl: StepLog) {
+        if (wantQty > 1 && !qtyDone) { device.pause(800); qtyDone = setQty(wantQty, sl) }
     }
 
     /** Last resort for a ✕ only the pixels show: a lone "X"/"×" in the top third of the screen. */
