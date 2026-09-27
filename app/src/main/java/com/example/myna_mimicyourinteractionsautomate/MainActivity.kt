@@ -151,7 +151,7 @@ class MainActivity : ComponentActivity() {
     private companion object {
         val PING_SCHEMA = JSONObject("""{"type":"object","required":["reply"],"properties":{"reply":{"type":"string"}}}""")
         val APPS = listOf("Zomato" to "com.application.zomato", "Amazon" to "in.amazon.mShop.android.shopping",
-            "Myntra" to "com.myntra.android", "Swiggy" to "in.swiggy.android")
+            "WhatsApp" to "com.whatsapp", "Myntra" to "com.myntra.android", "Swiggy" to "in.swiggy.android")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

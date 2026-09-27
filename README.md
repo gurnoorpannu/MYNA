@@ -49,20 +49,6 @@ Run the tests: `./gradlew :app:testDebugUnitTest` (80+ JVM tests, including full
 - **Home tab** → tap the mic and speak, or tap **Run** on an automation card. **Make slight changes** edits the blanks (item, restaurant…) before running.
 - **History tab** → every run, every step, and why it stopped.
 
-## Where AI is (and isn't) used
-
-| Part | AI? |
-|---|---|
-| Replaying steps, finding buttons, scrolling, pop-ups | No — rules + recorded screen elements |
-| Safety gate (payment / OTP / login) | **Never** — hard rules only |
-| Reading text drawn as images | No cloud — on-device OCR (Google ML Kit) |
-| Speech to text | Android speech recogniser |
-| After teaching: naming blanks, paraphrases, "why" lines | 1 Gemini call per teach (offline fallback) |
-| Voice: which automation, and the blank values | Gemini embeddings + 1 call per command (offline fallback) |
-| Last resort when a step's button can't be found | 1 Gemini call, private data masked |
-
-A normal replay makes **zero** AI calls.
-
 ## Documentation
 
 - [Architecture (with diagrams)](docs/architecture.md)

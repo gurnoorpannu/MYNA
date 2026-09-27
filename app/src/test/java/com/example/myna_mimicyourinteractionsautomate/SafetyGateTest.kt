@@ -70,6 +70,16 @@ class SafetyGateTest {
         assertEquals(Kind.PAYMENT, SafetyGate.checkTap(work, screen(work, text("UPI"), text("Credit card"), text("Net Banking")), "x", addressPick = true)?.kind)
     }
 
+    @Test fun whatsappOrderIsHandedOffAndChatSendIsNeverTapped() {
+        // The WhatsApp cart's final button sends the order to the business.
+        assertEquals(Kind.FINAL_ORDER, SafetyGate.check(screen(text("Your cart"), text("2 items"), button("Send to business")), "com.whatsapp")?.kind)
+        // A plain chat "Send" doesn't block the screen, but MYNA never taps it.
+        val send = UiNode(desc = "Send", cls = "ImageButton", clickable = true)
+        val chat = screen(text("Tasty Bites"), UiNode(text = "hi", editable = true), send)
+        assertNull(SafetyGate.check(chat, "com.whatsapp"))
+        assertEquals(Kind.FINAL_ORDER, SafetyGate.checkTap(send, chat, "com.whatsapp")?.kind)
+    }
+
     @Test fun tapLevelBlocksCommitTargetsEvenOnSafeScreens() {
         val pay = button("Pay now")
         assertEquals(Kind.FINAL_ORDER, SafetyGate.checkTap(pay, screen(text("Cart")), "x")?.kind)

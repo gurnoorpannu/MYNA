@@ -12,7 +12,7 @@ Use the **official PRISM template**. One idea per slide; the diagrams are in [ar
 8. **Generalisation & blanks** — diagram 4 + example: `{item}` and `{restaurant}` from one sentence; habit defaults; paraphrases.
 9. **Replay** — diagram 6: three-level finder + OCR, bounded fallbacks, never-taught goals (quantity, address), stuck reasons.
 10. **Safety** — rules-only gate table; tuned on real screens (cart offers, Wallet tab, product colour radios are *not* payment); the one address exception; `GatedActor` is the only way to tap.
-11. **Where AI is used** — the README table. A normal replay = 0 AI calls; a voice command ≈ 1; a teach = 1. Offline fallbacks for all.
+11. **Where AI is used** — replay, finding buttons and the safety gate use no AI; on-device OCR for image-only text; Gemini for naming blanks after a teach (1 call), understanding a voice command (≈ 1 call + embeddings) and last-resort recovery. Offline fallbacks for all.
 12. **Results: the 14 tests** — pass/fail table (fill in after the full test run on 29 Sep).
 13. **Numbers** — teach time vs manual time vs replay time (break-even after N runs, like SUGILITE); AI calls per run; unit tests (80+).
 14. **Research backing** — table below.

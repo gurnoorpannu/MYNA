@@ -26,7 +26,12 @@ object SafetyGate {
     /** Tapping these commits money or an order. */
     private val COMMIT = Regex(
         "\\b(place (your )?order|pay\\s*(now|₹|rs\\.?|inr|\\d)|proceed to pay|make payment|complete (the )?payment|" +
-            "confirm (and|&) pay|(slide|swipe) to pay|pay securely|buy now and pay)\\b", RegexOption.IGNORE_CASE)
+            "confirm (and|&) pay|(slide|swipe) to pay|pay securely|buy now and pay|" +
+            // WhatsApp ordering: sending the cart to the business IS placing the order.
+            "send (to business|order|cart)|send your (order|cart))\\b", RegexOption.IGNORE_CASE)
+
+    /** A plain "Send" (a chat message) is never tapped by MYNA; the user sends. Checked per tap, not per screen. */
+    private val SEND = Regex("^send( message)?$", RegexOption.IGNORE_CASE)
 
     /** A field asking for one of these is a credential field. */
     private val SECRET_FIELD = Regex(
@@ -94,6 +99,7 @@ object SafetyGate {
             if (!allowed) return b
         }
         if (COMMIT.containsMatchIn(t)) return Block(Kind.FINAL_ORDER, "target is \"${COMMIT.find(t)!!.value}\"")
+        if ((target.label ?: target.desc)?.let(SEND::matches) == true) return Block(Kind.FINAL_ORDER, "sending a message is up to you")
         if (target.label?.let(LOGIN_BUTTON::matches) == true) return Block(Kind.LOGIN, "target is a login button")
         return null
     }

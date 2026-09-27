@@ -200,7 +200,9 @@ object Compiler {
     suspend fun compile(rec: Recording, golden: Boolean = false): Result {
         val steps = rec.steps
         val blanks = findBlanks(rec)
-        val ai = runCatching { Llm.llm(prompt(rec, steps, blanks), SCHEMA) }.getOrNull()
+        // Messaging apps: chat names and previews stay on the phone (offline naming, no AI call).
+        val ai = if (com.example.myna_mimicyourinteractionsautomate.replay.Privacy.isPrivate(rec.app)) null
+            else runCatching { Llm.llm(prompt(rec, steps, blanks), SCHEMA) }.getOrNull()
 
         val names = ai?.optJSONArray("names")
         val taken = mutableSetOf<String>()

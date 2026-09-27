@@ -90,6 +90,7 @@ fun Bubble(text: String, mine: Boolean) {
 fun AppBadge(pkg: String) {
     val name = when {
         "zomato" in pkg -> "Zomato"; "amazon" in pkg -> "Amazon"; "myntra" in pkg -> "Myntra"; "swiggy" in pkg -> "Swiggy"
+        "whatsapp" in pkg -> "WhatsApp"
         else -> pkg.substringAfterLast('.').replaceFirstChar { it.uppercase() }
     }
     // Monochrome on purpose: the design is black and white.

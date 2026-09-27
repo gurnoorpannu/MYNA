@@ -160,7 +160,7 @@ class MynaService : AccessibilityService(), Device {
         val pkg = e.packageName?.toString() ?: return
         if (pkg == packageName || pkg in IGNORED_PACKAGES || pkg in imePkgs) return
         // Debug: which events does a tap inside a web page produce? (content/scroll noise skipped)
-        if (recorder != null && e.eventType !in NOISY_EVENTS) {
+        if (recorder != null && e.eventType !in NOISY_EVENTS && !com.example.myna_mimicyourinteractionsautomate.replay.Privacy.isPrivate(pkg)) {
             val line = "${System.currentTimeMillis()} $pkg ${AccessibilityEvent.eventTypeToString(e.eventType)} ${e.className} " +
                 "\"${e.text.joinToString(" ").take(80)}\" desc=${e.contentDescription?.take(60)} src=${e.source?.let { "${it.className}/${it.viewIdResourceName}/${it.text?.take(40)}" }}"
             File(getExternalFilesDir(null), "events.log").appendText(line + "\n")   // logcat's buffer is too small
@@ -258,7 +258,8 @@ class MynaService : AccessibilityService(), Device {
         detectSubmit(rec)
         if (Identity.isModal(root)) sheetChoices += Identity.selectedOptions(root) else sheetChoices.clear()
         val screen = inferMissedTap(rec, root, pkg)
-        rec.onScreen(screen, Identity.compact(root))
+        // No screen text saved for messaging apps (personal chats).
+        rec.onScreen(screen, if (com.example.myna_mimicyourinteractionsautomate.replay.Privacy.isPrivate(pkg)) "" else Identity.compact(root))
         // Teaching ends by itself at the payment/credential screen, before the user can tap "Place Order".
         SafetyGate.check(root, pkg)?.let { stopRecording(it) }
     }
