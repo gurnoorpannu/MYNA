@@ -21,12 +21,16 @@ Samsung PRISM Gen AI Hackathon 3.0 · Theme 3: Teachable Voice Automation · Tea
 
 All automation goes through Android's **AccessibilityService** — no app SDKs, no deep links, no web fallbacks.
 
-## Target apps
+## Apps it works with
 
-- **Zomato** (`com.application.zomato`) — food ordering, taught and replayed end to end
-- **Amazon Shopping** (`in.amazon.mShop.android.shopping`) — e-commerce, taught and replayed end to end
+MYNA isn't built for particular apps: it learns each task from your demo, so it works with any app you can open from the launcher. Nothing about any app is hard-coded.
 
-Nothing is hard-coded for these apps: every flow is learned from a demo. Any app with a launcher icon can be taught.
+**Tested end to end on:**
+
+- **Zomato** (`com.application.zomato`): food ordering (search a restaurant, pick a dish, options, quantity, address)
+- **Amazon Shopping** (`in.amazon.mShop.android.shopping`): shopping (search, pick a result, add to cart, checkout)
+
+These two were chosen because they cover the hard cases: text drawn as images, taps that send no events, web pages, pop-ups and a payment step.
 
 ## Build and run
 

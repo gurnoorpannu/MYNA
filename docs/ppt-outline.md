@@ -16,7 +16,7 @@ Use the **official PRISM template**. One idea per slide; the diagrams are in [ar
 12. **Results: the 14 tests** — pass/fail table (fill in after the full test run on 29 Sep).
 13. **Numbers** — teach time vs manual time vs replay time (break-even after N runs, like SUGILITE); AI calls per run; unit tests (80+).
 14. **Research backing** — table below.
-15. **Target apps & known limitations** — Zomato, Amazon; top 5 from [limitations.md](limitations.md).
+15. **Tested apps & known limitations** — works with any app (nothing app-specific); tested end to end on Zomato and Amazon because they cover the hard cases (image-only text, hidden taps, web views, pop-ups, payment). Top 5 limits from [limitations.md](limitations.md).
 16. **What's next** — phone-call pause, re-teach from a step, more languages (Hindi OCR), on-device LLM.
 
 ## Research table (slide 14)
