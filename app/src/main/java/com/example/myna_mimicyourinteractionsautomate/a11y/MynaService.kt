@@ -188,6 +188,9 @@ class MynaService : AccessibilityService(), Device {
     }
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
+        // Either volume key while MYNA is talking = be quiet.
+        if (event.action == KeyEvent.ACTION_DOWN && tts?.isSpeaking == true &&
+            (event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN || event.keyCode == KeyEvent.KEYCODE_VOLUME_UP)) hush()
         if (event.action == KeyEvent.ACTION_UP && event.keyCode == KeyEvent.KEYCODE_BACK) {
             typingWithKeyboard = false   // Back closed the keyboard: not a submit
             recorder?.onKey(SystemKey.BACK)
@@ -418,7 +421,7 @@ class MynaService : AccessibilityService(), Device {
                 setTextColor(Color.WHITE)
                 setBackgroundColor(0xE6202124.toInt())
                 setPadding(48, 40, 48, 40)
-                setOnClickListener { dismissHandOff() }
+                setOnClickListener { hush(); dismissHandOff() }
             }
             val lp = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT,
@@ -635,7 +638,10 @@ class MynaService : AccessibilityService(), Device {
         promptView = v
     }
 
-    fun requestStop() { stopRequested = true }
+    fun requestStop() { stopRequested = true; hush() }
+
+    /** Stop talking now and drop anything queued. */
+    fun hush() { tts?.stop() }
 
     private fun showRunOverlay() {
         val btn = Button(this).apply { text = "▶ starting…  ■ Stop"; setOnClickListener { requestStop(); text = "stopping…" } }

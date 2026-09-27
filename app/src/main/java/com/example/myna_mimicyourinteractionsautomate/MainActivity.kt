@@ -138,6 +138,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun listen(onHeard: (String) -> Unit) {
+        MynaService.instance?.hush()
         if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             afterMicGrant = { listen(onHeard) }; micPermission.launch(android.Manifest.permission.RECORD_AUDIO); return
         }
@@ -682,6 +683,12 @@ class MainActivity : ComponentActivity() {
 
     private fun save(r: Recipe) {
         Recipes(File(getExternalFilesDir(null), "recipes")).save(r); refresh()
+    }
+
+    override fun onDestroy() {
+        // Swiped away / closed: stop talking and stop any run.
+        if (isFinishing) MynaService.instance?.requestStop()
+        super.onDestroy()
     }
 
     override fun onResume() {
