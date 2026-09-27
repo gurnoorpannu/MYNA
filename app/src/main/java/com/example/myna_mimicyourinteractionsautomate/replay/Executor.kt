@@ -334,6 +334,10 @@ class Executor(
             val matches = root.walk().filter { it.visible && !it.editable && it.label?.let { l -> Identity.loose(l).contains(want) } == true }.toList()
             val rows = matches.filter { Identity.listItem(it) != null }.sortedWith(
                 compareBy({ if (Identity.loose(it.label!!) == want) 0 else 1 }, { it.t }))
+            // T10: the pick's own row says it's closed ("Currently not accepting orders") → a clear stop, not a hunt.
+            rows.firstOrNull()?.let { r -> (Identity.listItem(r) ?: r.ancestors().take(3).lastOrNull() ?: r).walk()
+                .mapNotNull { it.label }.firstOrNull(CLOSED::containsMatchIn)
+                ?.let { throw Stop(Outcome.STUCK, "$pick isn't taking orders right now — the app says \"${it.take(80)}\"") } }
             val heading = matches.any { Identity.listItem(it) == null }
             // Arrived: after at least one hop, the page names the pick as a heading (other "Domino's…" rows don't matter).
             if (heading && hop > 0) { sl.status = "ok"; sl.note = "opened \"$pick\" after $hop tap(s)"; return }
@@ -585,6 +589,10 @@ class Executor(
             ?: lines.filter { Identity.loose(it.text).startsWith(want) }.minByOrNull { it.t }
             ?: lines.filter { Identity.loose(it.text).contains(want) }.minByOrNull { it.t }
             ?: return null
+        // T10: the text right under it (same card, drawn as an image) says it's closed → stop with that reason.
+        lines.firstOrNull { it.t >= line.t && it.t <= line.b + 260 && it !== line && CLOSED.containsMatchIn(it.text) }?.let {
+            throw Stop(Outcome.STUCK, "${line.text.trimStart('<', ' ')} isn't taking orders right now — the app says \"${it.text.take(80)}\"")
+        }
         return UiNode(text = line.text, cls = "OcrText", clickable = true, l = line.l, t = line.t, r = line.r, b = line.b)
     }
 

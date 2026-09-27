@@ -108,7 +108,9 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
     override fun key(key: SystemKey) {}
     override fun scroll(list: UiNode, forward: Boolean) = false
     override suspend fun ocr() = when {
-        state == "search" && typed.isNotEmpty() -> listOf(OcrLine("Domino's Pizza", 40, 320, 600, 380), OcrLine("Dominos pizza near me", 40, 420, 600, 480))
+        state == "search" && typed.isNotEmpty() -> listOf(OcrLine("Domino's Pizza", 40, 320, 600, 380)) +
+            (if (closed) listOf(OcrLine("Currently not accepting orders", 40, 390, 600, 430)) else emptyList()) +
+            OcrLine("Dominos pizza near me", 40, 460, 600, 520)
         state == "sheet" -> listOf(OcrLine("Crust", 60, 700, 300, 760), OcrLine("Add item ₹109", 420, 2070, 980, 2130))
         else -> emptyList()
     }
@@ -225,8 +227,17 @@ class ExecutorTest {
         val z = FakeZomato().apply { closed = true }
         val log = Executor(z).run(recipe, demo)
         assertEquals(Outcome.STUCK, log.outcome)
-        assertTrue(log.reason, log.reason!!.contains("Opens at 11 AM"))
+        assertTrue(log.reason, log.reason!!.contains("right now"))   // caught on the results, before the menu
         assertTrue(z.cart.isEmpty())
+    }
+
+    @Test fun t10ClosedShownOnlyInTheSearchResultStopsThere() = runBlocking {
+        // 27 Sep: Zomato's results said "Currently not accepting orders" under Domino's, as pixels only.
+        val z = FakeZomato().apply { closed = true }
+        val log = Executor(z).run(recipe, demo)
+        assertEquals(Outcome.STUCK, log.outcome)
+        assertTrue(log.reason, log.reason!!.contains("not accepting orders"))
+        assertEquals("search", z.state)   // stopped on the results, didn't wander
     }
 
     @Test fun changedItemAddsFarmhouse() = runBlocking {
