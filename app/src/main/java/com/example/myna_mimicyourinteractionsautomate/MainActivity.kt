@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.offset
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -119,6 +120,7 @@ class MainActivity : ComponentActivity() {
     private var settingsOpen by mutableStateOf(false)
     private var customizing by mutableStateOf<Recipe?>(null)
     private var chatOpen by mutableStateOf(false)
+    private var drawerOnOpen by mutableStateOf(false)
 
     // Ask MYNA (Phase 5) conversation state
     private val chat = mutableStateListOf<String>()
@@ -163,7 +165,10 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.light(android.graphics.Color.WHITE, android.graphics.Color.WHITE),
             navigationBarStyle = SystemBarStyle.light(android.graphics.Color.WHITE, android.graphics.Color.WHITE),
         )
-        if (chat.isEmpty()) runCatching { chat.addAll(chatFile.readLines().filter { it.isNotBlank() }.takeLast(200)) }
+        // Old single chat.txt → first entry of the chat list.
+        java.io.File(filesDir, "chat.txt").let { if (it.exists()) it.renameTo(chatFile(it.lastModified())) }
+        loadChats()
+        pastChats.firstOrNull()?.let { if (chat.isEmpty()) openChat(it.first) }   // reopen where you left off
         setContent { MYNAMimicYourINteractionsAutomateTheme { App() } }
     }
 
@@ -226,7 +231,9 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun HomeScreen() = Page {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("MYNA", Modifier.weight(1f), fontWeight = FontWeight.Black, fontSize = 26.sp, letterSpacing = 2.sp)
+            // Chats list, like Claude: opens the chat with the drawer out.
+            IconButton(::openChatList, Modifier.offset(x = (-12).dp)) { Icon(MynaIcons.Menu, "Chats", tint = Ink) }
+            Text("MYNA", Modifier.weight(1f).offset(x = (-12).dp), fontWeight = FontWeight.Black, fontSize = 26.sp, letterSpacing = 2.sp)
             Box(Modifier.size(40.dp).clip(CircleShape).background(Card).border(1.dp, Line, CircleShape).clickable { settingsOpen = true },
                 contentAlignment = Alignment.Center) { Icon(MynaIcons.Person, "Settings", Modifier.size(22.dp), tint = Ink) }
         }
@@ -266,6 +273,9 @@ class MainActivity : ComponentActivity() {
                 caption = if (listening && !chatOpen) liveWords.ifBlank { "Listening…" } else "What do you want to do with MYNA today?",
                 onTap = { startListening(scope) })
         }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(::openChatList) { Text("See all chats", color = Ink, fontWeight = FontWeight.SemiBold) }
+        }
         OutlinedTextField(input, { input = it }, Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(16.dp),
             placeholder = { Text("Or type a command") },
             trailingIcon = {
@@ -298,18 +308,57 @@ class MainActivity : ComponentActivity() {
         val focus = androidx.compose.ui.platform.LocalFocusManager.current
         val imeUp = androidx.compose.foundation.layout.WindowInsets.isImeVisible
         // Back closes the keyboard first, then the chat.
-        BackHandler { if (imeUp) { keyboard?.hide(); focus.clearFocus() } else { voice.stop(); listening = false; chatOpen = false } }
+        val drawer = androidx.compose.material3.rememberDrawerState(
+            if (drawerOnOpen) androidx.compose.material3.DrawerValue.Open else androidx.compose.material3.DrawerValue.Closed)
+        LaunchedEffect(Unit) { drawerOnOpen = false }
+        BackHandler {
+            when {
+                imeUp -> { keyboard?.hide(); focus.clearFocus() }
+                drawer.isOpen -> scope.launch { drawer.close() }
+                else -> { voice.stop(); listening = false; chatOpen = false }
+            }
+        }
         // Keep the newest message in view.
         LaunchedEffect(chat.size, thinking) { if (chat.isNotEmpty()) list.animateScrollToItem(chat.size - 1 + if (thinking) 1 else 0) }
         // When MYNA asks something, listen for the reply once it has finished speaking.
         val asking = pending
         LaunchedEffect(asking) { if (asking != null) { kotlinx.coroutines.delay(2_500); if (pending === asking && !listening) startListening(scope) } }
 
+        val pick = { act: () -> Unit -> voice.stop(); listening = false; act(); scope.launch { drawer.close() }; Unit }
+        androidx.compose.material3.ModalNavigationDrawer(drawerState = drawer, drawerContent = {
+            androidx.compose.material3.ModalDrawerSheet(drawerContainerColor = androidx.compose.ui.graphics.Color.White) {
+                Column(Modifier.systemBarsPadding().padding(12.dp)) {
+                    Text("Chats", fontWeight = FontWeight.Black, fontSize = 20.sp, modifier = Modifier.padding(12.dp))
+                    androidx.compose.material3.NavigationDrawerItem(label = { Text("New chat", fontWeight = FontWeight.SemiBold) },
+                        icon = { Icon(MynaIcons.Edit, null, tint = Ink) }, selected = false, onClick = { pick(::newChat) })
+                    androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = 8.dp), color = com.example.myna_mimicyourinteractionsautomate.ui.theme.Line)
+                    if (pastChats.isEmpty()) Text("No chats yet", color = InkSoft, modifier = Modifier.padding(12.dp))
+                    androidx.compose.foundation.lazy.LazyColumn {
+                        items(pastChats.size, key = { pastChats[it].first }) { i ->
+                            val (id, title) = pastChats[i]
+                            androidx.compose.material3.NavigationDrawerItem(
+                                label = {
+                                    Column {
+                                        Text(title, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                        Text(java.text.SimpleDateFormat("d MMM, h:mm a", java.util.Locale.getDefault()).format(java.util.Date(id)),
+                                            color = InkSoft, fontSize = 12.sp)
+                                    }
+                                },
+                                badge = { IconButton({ deleteChat(id) }) { Icon(MynaIcons.Delete, "Delete chat", tint = InkSoft) } },
+                                selected = id == chatId, onClick = { pick { openChat(id) } },
+                                colors = androidx.compose.material3.NavigationDrawerItemDefaults.colors(
+                                    selectedContainerColor = com.example.myna_mimicyourinteractionsautomate.ui.theme.Line))
+                        }
+                    }
+                }
+            }
+        }) {
         Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).systemBarsPadding()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton({ voice.stop(); listening = false; chatOpen = false }) { Icon(MynaIcons.Back, "Back", tint = Ink) }
+                IconButton({ loadChats(); scope.launch { drawer.open() } }) { Icon(MynaIcons.Menu, "Chats", tint = Ink) }
                 Text("MYNA", fontWeight = FontWeight.Black, fontSize = 20.sp, letterSpacing = 2.sp, modifier = Modifier.weight(1f))
-                if (chat.isNotEmpty()) TextButton({ voice.stop(); listening = false; clearChat() }) { Text("New chat", color = Ink) }
+                if (chat.isNotEmpty()) IconButton({ voice.stop(); listening = false; newChat() }) { Icon(MynaIcons.Edit, "New chat", tint = Ink) }
             }
             androidx.compose.foundation.lazy.LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp), state = list,
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -352,6 +401,7 @@ class MainActivity : ComponentActivity() {
                     MicButton(listening) { startListening(scope) }
                 }
             }
+        }
         }
     }
 
@@ -606,12 +656,31 @@ class MainActivity : ComponentActivity() {
     // ================================================================= assistant logic (unchanged behaviour)
 
     /** The chat survives closing the app: one line per message in files/chat.txt. */
-    private val chatFile by lazy { java.io.File(filesDir, "chat.txt") }
+    /** Every chat is one file in files/chats/<started ms>.txt, one line per message; they survive closing the app. */
+    private val chatDir by lazy { java.io.File(filesDir, "chats").apply { mkdirs() } }
+    private var chatId by mutableStateOf(0L)          // 0 = new chat, no file until the first message
+    private var pastChats by mutableStateOf<List<Pair<Long, String>>>(emptyList())
+    private fun chatFile(id: Long) = java.io.File(chatDir, "$id.txt")
     private fun post(line: String) {
         chat += line
-        runCatching { chatFile.appendText(line.replace('\n', ' ') + "\n") }
+        if (chatId == 0L) chatId = System.currentTimeMillis()
+        runCatching { chatFile(chatId).appendText(line.replace('\n', ' ') + "\n") }
     }
-    private fun clearChat() { chat.clear(); pending = null; chatFile.delete() }
+    private fun loadChats() {
+        pastChats = chatDir.listFiles().orEmpty().mapNotNull { f ->
+            val id = f.nameWithoutExtension.toLongOrNull() ?: return@mapNotNull null
+            val title = f.useLines { l -> l.firstOrNull { it.startsWith("You: ") }?.removePrefix("You: ") } ?: "Chat"
+            (f.lastModified() to id) to title
+        }.sortedByDescending { it.first.first }.map { it.first.second to it.second }
+    }
+    /** Opens the chat screen with the chats list slid out. */
+    private fun openChatList() { loadChats(); drawerOnOpen = true; chatOpen = true }
+    private fun newChat() { chat.clear(); pending = null; chatId = 0L }
+    private fun openChat(id: Long) {
+        newChat(); chatId = id
+        runCatching { chat.addAll(chatFile(id).readLines().filter { it.isNotBlank() }.takeLast(200)) }
+    }
+    private fun deleteChat(id: Long) { chatFile(id).delete(); if (id == chatId) newChat(); loadChats() }
 
     private fun myna(text: String) {
         post("MYNA: $text")
