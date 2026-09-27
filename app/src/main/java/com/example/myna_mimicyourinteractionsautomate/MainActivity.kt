@@ -269,6 +269,10 @@ class MainActivity : ComponentActivity() {
             trailingIcon = {
                 TextButton({ val t = input; input = ""; chatOpen = true; scope.launch { onUserSaid(t) } }, enabled = input.isNotBlank()) { Text("Send") }
             })
+        // Closed the chat by accident? Bring it back.
+        if (chat.isNotEmpty()) OutlinedButton({ chatOpen = true }, Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+            Text(if (pending != null) "Back to chat · MYNA is waiting for you" else "Back to chat", color = Ink)
+        }
     }
 
     /** Listen, fix mis-hearings against known words ("marherator" → "Margherita"), then take it as the user's turn. */
