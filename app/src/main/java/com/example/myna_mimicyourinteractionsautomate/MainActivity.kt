@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -162,6 +163,7 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.light(android.graphics.Color.WHITE, android.graphics.Color.WHITE),
             navigationBarStyle = SystemBarStyle.light(android.graphics.Color.WHITE, android.graphics.Color.WHITE),
         )
+        if (chat.isEmpty()) runCatching { chat.addAll(chatFile.readLines().filter { it.isNotBlank() }.takeLast(200)) }
         setContent { MYNAMimicYourINteractionsAutomateTheme { App() } }
     }
 
@@ -286,12 +288,17 @@ class MainActivity : ComponentActivity() {
     }
 
     /** Full-screen conversation with MYNA; slides up over everything. */
+    @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
     @Composable
     private fun ChatScreen() {
         val scope = rememberCoroutineScope()
         var input by remember { mutableStateOf("") }
         val list = androidx.compose.foundation.lazy.rememberLazyListState()
-        BackHandler { voice.stop(); listening = false; chatOpen = false }
+        val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+        val focus = androidx.compose.ui.platform.LocalFocusManager.current
+        val imeUp = androidx.compose.foundation.layout.WindowInsets.isImeVisible
+        // Back closes the keyboard first, then the chat.
+        BackHandler { if (imeUp) { keyboard?.hide(); focus.clearFocus() } else { voice.stop(); listening = false; chatOpen = false } }
         // Keep the newest message in view.
         LaunchedEffect(chat.size, thinking) { if (chat.isNotEmpty()) list.animateScrollToItem(chat.size - 1 + if (thinking) 1 else 0) }
         // When MYNA asks something, listen for the reply once it has finished speaking.
@@ -301,7 +308,8 @@ class MainActivity : ComponentActivity() {
         Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).systemBarsPadding()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton({ voice.stop(); listening = false; chatOpen = false }) { Icon(MynaIcons.Back, "Back", tint = Ink) }
-                Text("MYNA", fontWeight = FontWeight.Black, fontSize = 20.sp, letterSpacing = 2.sp)
+                Text("MYNA", fontWeight = FontWeight.Black, fontSize = 20.sp, letterSpacing = 2.sp, modifier = Modifier.weight(1f))
+                if (chat.isNotEmpty()) TextButton({ voice.stop(); listening = false; clearChat() }) { Text("New chat", color = Ink) }
             }
             androidx.compose.foundation.lazy.LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp), state = list,
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -597,8 +605,16 @@ class MainActivity : ComponentActivity() {
 
     // ================================================================= assistant logic (unchanged behaviour)
 
+    /** The chat survives closing the app: one line per message in files/chat.txt. */
+    private val chatFile by lazy { java.io.File(filesDir, "chat.txt") }
+    private fun post(line: String) {
+        chat += line
+        runCatching { chatFile.appendText(line.replace('\n', ' ') + "\n") }
+    }
+    private fun clearChat() { chat.clear(); pending = null; chatFile.delete() }
+
     private fun myna(text: String) {
-        chat += "MYNA: $text"
+        post("MYNA: $text")
         MynaService.instance?.say(text)
     }
 
@@ -607,8 +623,8 @@ class MainActivity : ComponentActivity() {
 
     /** One turn of the conversation: a new command, or an answer to MYNA's question. */
     private suspend fun onUserSaid(text: String, fixes: List<Pair<String, String>> = emptyList()) {
-        chat += "You: $text"
-        if (fixes.isNotEmpty()) chat += "MYNA: (heard " + fixes.joinToString { "“${it.first}” → “${it.second}”" } + ")"
+        post("You: $text")
+        if (fixes.isNotEmpty()) post("MYNA: (heard " + fixes.joinToString { "“${it.first}” → “${it.second}”" } + ")")
         val p = pending
         pending = null
         when {
