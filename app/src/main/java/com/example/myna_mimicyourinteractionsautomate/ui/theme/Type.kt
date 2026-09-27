@@ -6,26 +6,27 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import com.example.myna_mimicyourinteractionsautomate.R
 
-/** Open Sans, upright static files. Black (900) falls back to ExtraBold. */
-val OpenSans = FontFamily(
-    Font(R.font.open_sans_light, FontWeight.Light),
-    Font(R.font.open_sans_regular, FontWeight.Normal),
-    Font(R.font.open_sans_medium, FontWeight.Medium),
-    Font(R.font.open_sans_semibold, FontWeight.SemiBold),
-    Font(R.font.open_sans_bold, FontWeight.Bold),
-    Font(R.font.open_sans_extrabold, FontWeight.ExtraBold),
+/** Poppins, upright static files. */
+val Poppins = FontFamily(
+    Font(R.font.poppins_light, FontWeight.Light),
+    Font(R.font.poppins_regular, FontWeight.Normal),
+    Font(R.font.poppins_medium, FontWeight.Medium),
+    Font(R.font.poppins_semibold, FontWeight.SemiBold),
+    Font(R.font.poppins_bold, FontWeight.Bold),
+    Font(R.font.poppins_extrabold, FontWeight.ExtraBold),
+    Font(R.font.poppins_black, FontWeight.Black),
 )
 
-/** Material's default sizes, all in Open Sans. */
+/** Material's default sizes, all in Poppins. */
 val Typography = Typography().run {
     Typography(
-        displayLarge = displayLarge.copy(fontFamily = OpenSans), displayMedium = displayMedium.copy(fontFamily = OpenSans),
-        displaySmall = displaySmall.copy(fontFamily = OpenSans), headlineLarge = headlineLarge.copy(fontFamily = OpenSans),
-        headlineMedium = headlineMedium.copy(fontFamily = OpenSans), headlineSmall = headlineSmall.copy(fontFamily = OpenSans),
-        titleLarge = titleLarge.copy(fontFamily = OpenSans), titleMedium = titleMedium.copy(fontFamily = OpenSans),
-        titleSmall = titleSmall.copy(fontFamily = OpenSans), bodyLarge = bodyLarge.copy(fontFamily = OpenSans),
-        bodyMedium = bodyMedium.copy(fontFamily = OpenSans), bodySmall = bodySmall.copy(fontFamily = OpenSans),
-        labelLarge = labelLarge.copy(fontFamily = OpenSans), labelMedium = labelMedium.copy(fontFamily = OpenSans),
-        labelSmall = labelSmall.copy(fontFamily = OpenSans),
+        displayLarge = displayLarge.copy(fontFamily = Poppins), displayMedium = displayMedium.copy(fontFamily = Poppins),
+        displaySmall = displaySmall.copy(fontFamily = Poppins), headlineLarge = headlineLarge.copy(fontFamily = Poppins),
+        headlineMedium = headlineMedium.copy(fontFamily = Poppins), headlineSmall = headlineSmall.copy(fontFamily = Poppins),
+        titleLarge = titleLarge.copy(fontFamily = Poppins), titleMedium = titleMedium.copy(fontFamily = Poppins),
+        titleSmall = titleSmall.copy(fontFamily = Poppins), bodyLarge = bodyLarge.copy(fontFamily = Poppins),
+        bodyMedium = bodyMedium.copy(fontFamily = Poppins), bodySmall = bodySmall.copy(fontFamily = Poppins),
+        labelLarge = labelLarge.copy(fontFamily = Poppins), labelMedium = labelMedium.copy(fontFamily = Poppins),
+        labelSmall = labelSmall.copy(fontFamily = Poppins),
     )
 }

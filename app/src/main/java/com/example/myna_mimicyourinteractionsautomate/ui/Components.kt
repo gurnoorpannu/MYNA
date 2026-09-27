@@ -121,7 +121,8 @@ fun AutomationCard(title: String, pkg: String, enabled: Boolean, onRun: () -> Un
         // Same width as Run + Steps together: change the blanks (item, restaurant…) before running.
         if (onChange != null) OutlinedButton(onChange, Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), contentPadding = compact,
             colors = outlined, border = edge) {
-            Text("Make slight changes", maxLines = 1, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text("Make slight changes", maxLines = 2, fontSize = 13.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         }
     }
 }
