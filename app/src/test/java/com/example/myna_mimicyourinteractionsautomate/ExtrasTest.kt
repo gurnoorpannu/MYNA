@@ -11,7 +11,8 @@ class ExtrasTest {
         assertEquals(2, Extras.parse("order a couple of margheritas").qty)
         assertEquals(null, Extras.parse("add a phone case for my s25 ultra").qty)     // never the "25" in s25
         assertEquals(null, Extras.parse("order a double cheese burst margherita").qty) // a dish name, not a count
-        assertEquals("order margheritas from dominos", Extras.parse("order 2 margheritas from dominos").rest)
+        assertEquals("order margherita from dominos", Extras.parse("order 2 margheritas from dominos").rest)   // "Dominos" untouched
+        assertEquals("get me farmhouse pizza", Extras.parse("get me three farmhouse pizzas").rest)
     }
 
     @Test fun addresses() {

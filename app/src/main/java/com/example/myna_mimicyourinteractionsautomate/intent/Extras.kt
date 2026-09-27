@@ -33,12 +33,26 @@ object Extras {
         val num = Regex("(?<![\\p{L}\\p{N}])(\\d{1,2})\\s*x?(?=\\s+\\p{L})|\\bx\\s*(\\d{1,2})\\b|\\b(\\d{1,2})\\s*x\\b", RegexOption.IGNORE_CASE)
         num.find(rest)?.let { m ->
             val n = (m.groupValues[1].ifEmpty { m.groupValues[2] }.ifEmpty { m.groupValues[3] }).toIntOrNull()
-            if (n != null && n in 1..20) { qty = n; rest = rest.removeRange(m.range) }
+            if (n != null && n in 1..20) { qty = n; rest = singularFrom(rest.removeRange(m.range), m.range.first) }
         }
         if (qty == null) NUMBER_WORDS.entries.sortedByDescending { it.key.length }.firstOrNull { (w, _) ->
             Regex("\\b$w\\b", RegexOption.IGNORE_CASE).containsMatchIn(rest)
-        }?.let { (w, n) -> qty = n; rest = rest.replace(Regex("\\b$w\\b", RegexOption.IGNORE_CASE), " ") }
+        }?.let { (w, n) ->
+            val at = Regex("\\b$w\\b", RegexOption.IGNORE_CASE).find(rest)!!.range.first
+            qty = n; rest = singularFrom(rest.replace(Regex("\\b$w\\b", RegexOption.IGNORE_CASE), " "), at)
+        }
         return Parsed(qty, address, rest.replace(Regex("\\s{2,}"), " ").trim())
+    }
+
+    /**
+     * The counted words go back to one: "2 margheritas from dominos" → "margherita from dominos".
+     * Menus list "Margherita"; searching "margheritas" found other dishes (27 Sep). Stops at from/on/to… so "Dominos" stays.
+     */
+    private fun singularFrom(s: String, at: Int): String {
+        val head = s.substring(0, at.coerceAtMost(s.length))
+        val tail = s.substring(head.length)
+        val stop = Regex("\\b(from|on|at|to|for|in|and|with|via)\\b", RegexOption.IGNORE_CASE).find(tail)?.range?.first ?: tail.length
+        return head + tail.substring(0, stop).replace(Regex("\\p{L}+")) { singular(it.value) } + tail.substring(stop)
     }
 
     /** "margheritas" → "margherita" for matching what's on screen. */
