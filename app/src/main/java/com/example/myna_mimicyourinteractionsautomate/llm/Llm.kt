@@ -25,10 +25,12 @@ object Llm {
 
     suspend fun llm(prompt: String, schema: JSONObject): JSONObject = withContext(Dispatchers.IO) {
         calls++
+        log("ai call #$calls \"${schema.optString("title")}\"" + if (mock) " (mock, no request)" else "")
         if (mock) return@withContext mockReply(schema)
         val full = "$prompt\n\nReply with JSON only, matching this JSON Schema:\n$schema"
         val first = generate(full)
         val err = problem(first, schema) ?: return@withContext JSONObject(first)
+        log("ai call #$calls retry: $err")   // a second generate request against the daily quota
         val second = generate("$full\n\nYour previous reply was invalid ($err):\n$first\nReply again with corrected JSON only.")
         problem(second, schema)?.let { throw LlmException("invalid after retry: $it") }
         JSONObject(second)
@@ -47,6 +49,9 @@ object Llm {
         for (i in a.indices) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i] }
         return if (na == 0f || nb == 0f) 0f else dot / (sqrt(na) * sqrt(nb))
     }
+
+    /** One logcat line per Gemini call / failure (tag Myna), to track the free tier's daily quota. No prompt text. */
+    private fun log(msg: String) { runCatching { android.util.Log.i("Myna", msg) } }   // android.util.Log is a stub in JVM tests
 
     internal fun mockReply(schema: JSONObject): JSONObject =
         canned[schema.optString("title")]?.let(::JSONObject) ?: (JsonSchema.example(schema) as JSONObject)
@@ -87,7 +92,7 @@ object Llm {
             c.outputStream.use { it.write(body.toString().toByteArray()) }
             val ok = c.responseCode in 200..299
             val reply = (if (ok) c.inputStream else c.errorStream).bufferedReader().use { it.readText() }
-            if (!ok) throw LlmException("HTTP ${c.responseCode}: ${reply.take(300)}")
+            if (!ok) { log("ai HTTP ${c.responseCode} on ${path.substringBefore(':')}: callers fall back offline"); throw LlmException("HTTP ${c.responseCode}: ${reply.take(300)}") }
             return JSONObject(reply)
         } finally {
             c.disconnect()
