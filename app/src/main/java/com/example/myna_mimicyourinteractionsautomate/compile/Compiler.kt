@@ -12,6 +12,7 @@ import com.example.myna_mimicyourinteractionsautomate.recipe.Subtask
 import com.example.myna_mimicyourinteractionsautomate.recipe.UniqueKey
 import com.example.myna_mimicyourinteractionsautomate.record.Recorder
 import com.example.myna_mimicyourinteractionsautomate.record.describe
+import com.example.myna_mimicyourinteractionsautomate.replay.Privacy
 import com.example.myna_mimicyourinteractionsautomate.screen.Identity.loose
 import org.json.JSONArray
 import org.json.JSONObject
@@ -174,7 +175,8 @@ object Compiler {
        "questions": {"type": "array", "items": {"type": "string"}}
      }}""")
 
-    private fun prompt(rec: Recording, steps: List<Step>, blanks: List<Blank>) = buildString {
+    /** Masked (phone numbers, pincodes, e-mails) before it leaves the phone, like every cloud call (design §4.6). */
+    internal fun prompt(rec: Recording, steps: List<Step>, blanks: List<Blank>) = Privacy.mask(buildString {
         appendLine("You compile a phone automation that a user taught by voice + taps.")
         appendLine("App: ${rec.app}")
         appendLine("Spoken command: \"${rec.utterance}\"")
@@ -195,7 +197,7 @@ object Compiler {
         appendLine("- subtasks: contiguous groups covering all steps in order, e.g. open_app, search_restaurant, add_item, checkout.")
         appendLine("- noise: steps that are clearly not part of the task (dismissing leftovers, mis-taps), with a reason. Be conservative.")
         appendLine("- questions: only if the user SAID one thing but TAPPED a different one (e.g. said Margherita, added Farmhouse). Else empty.")
-    }
+    })
 
     suspend fun compile(rec: Recording, golden: Boolean = false): Result {
         val steps = rec.steps
