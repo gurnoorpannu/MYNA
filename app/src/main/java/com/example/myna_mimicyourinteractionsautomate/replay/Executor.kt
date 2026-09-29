@@ -340,7 +340,10 @@ class Executor(
             rows.firstOrNull()?.let { r -> (Identity.listItem(r) ?: r.ancestors().take(3).lastOrNull() ?: r).walk()
                 .mapNotNull { it.label }.firstOrNull(CLOSED::containsMatchIn)
                 ?.let { throw Stop(Outcome.STUCK, "$pick isn't taking orders right now — the app says \"${it.take(80)}\"") } }
-            val heading = matches.any { Identity.listItem(it) == null }
+            // A page naming the pick with no search box left is the pick's own page, even when its header is a list
+            // (Zomato's restaurant title sits in a scrollable GridView; suggestions/results always keep the search box).
+            val heading = matches.any { Identity.listItem(it) == null } ||
+                (hop > 0 && matches.isNotEmpty() && root.walk().none { it.visible && it.editable })
             // Arrived: after at least one hop, the page names the pick as a heading (other "Domino's…" rows don't matter).
             if (heading && hop > 0) { sl.status = "ok"; sl.note = "opened \"$pick\" after $hop tap(s)"; return }
             val tapTarget = rows.firstOrNull()?.let(Finder::tappable)
