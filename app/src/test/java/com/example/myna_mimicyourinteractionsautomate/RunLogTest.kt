@@ -6,6 +6,7 @@ import com.example.myna_mimicyourinteractionsautomate.replay.RunLog
 import com.example.myna_mimicyourinteractionsautomate.replay.StepLog
 import com.example.myna_mimicyourinteractionsautomate.replay.report
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 /** Run logs are what History and T14 ("did the last run work?") read back from files/runs/. */
@@ -53,5 +54,12 @@ class RunLogTest {
     @Test fun t14DoneAndStopped() {
         assertEquals("Yes, \"order Margherita from Domino's on Zomato\" finished.", log(Outcome.DONE, steps = steps.take(2)).report())
         assertEquals("You stopped it at step 2.", log(Outcome.STOPPED, "stopped by user", steps.take(2)).report())
+    }
+
+    @Test fun t14FailureWithNoStepsDoesNotSayNull() {
+        // A recipe whose steps were all dropped as mistakes ends with no step logs at all.
+        val r = log(Outcome.FAILED, "all steps done but the payment screen never appeared").report()
+        assertFalse(r, r.contains("null"))
+        assertEquals("No. It stopped before the first step, because all steps done but the payment screen never appeared.", r)
     }
 }

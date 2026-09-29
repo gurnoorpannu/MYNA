@@ -25,7 +25,7 @@ fun RunLog.report(): String {
         Outcome.STOPPED -> "You stopped it at step ${steps.size}."
         else -> {
             val s = steps.lastOrNull { it.status != "ok" } ?: steps.lastOrNull()
-            "No. It stopped at step ${s?.index}, ${s?.what}, because $reason."
+            "No. It stopped " + (s?.let { "at step ${it.index}, ${it.what}" } ?: "before the first step") + ", because $reason."
         }
     }
 }
