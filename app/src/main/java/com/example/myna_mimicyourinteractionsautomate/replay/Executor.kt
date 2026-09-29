@@ -81,6 +81,7 @@ class Executor(
         wantQty = slots["qty"]?.toIntOrNull()?.coerceIn(1, 20) ?: 1
         wantAddress = slots["address"]?.takeIf { it.isNotBlank() }
         val steps = recipe.subtasks.flatMap { it.steps }.filter { !it.noise }
+        val callsAtStart = com.example.myna_mimicyourinteractionsautomate.llm.Llm.calls
         try {
             var retries = 0
             steps.forEachIndexed { i, step ->
@@ -133,6 +134,7 @@ class Executor(
             }
         }
         log.endedAt = device.now()
+        log.aiCalls = com.example.myna_mimicyourinteractionsautomate.llm.Llm.calls - callsAtStart   // AI helper picks during this run
         return log
     }
 
