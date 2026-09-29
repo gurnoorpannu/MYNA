@@ -679,6 +679,12 @@ class MynaService : AccessibilityService(), Device {
                         val rec = runCatching { RecipeJson.decodeFromString<com.example.myna_mimicyourinteractionsautomate.recipe.Recording>(f.readText()) }.getOrNull() ?: return
                         scope.launch { learn(rec); Log.i(TAG, "debug relearn ${f.name} done") }
                     }
+                    "run" -> {   // replay a recipe from adb: --es id zomato_… --es slots "item=Margherita;qty=2"
+                        val all = recipes.all()
+                        val r = all.firstOrNull { it.id == i.getStringExtra("id") } ?: all.maxByOrNull { it.id.substringAfterLast('_').toLongOrNull() ?: 0 } ?: return
+                        val slots = i.getStringExtra("slots").orEmpty().split(';').mapNotNull { kv -> kv.split('=', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] } }.toMap()
+                        Log.i(TAG, "debug run ${r.id} $slots"); replay(listOf(r), slots)
+                    }
                     "tap" -> {   // bypasses the gate on purpose: dev only, adb only
                         val x = i.getIntExtra("x", 0).toFloat(); val y = i.getIntExtra("y", 0).toFloat()
                         val dur = i.getIntExtra("dur", 80).toLong(); val move = i.getIntExtra("move", 0)
