@@ -31,7 +31,8 @@ object Extras {
         var qty: Int? = null
         // A standalone count before a word ("2 margheritas", "two farmhouse"), or "x2" / "2x". Never inside "s25".
         val num = Regex("(?<![\\p{L}\\p{N}])(\\d{1,2})\\s*x?(?=\\s+\\p{L})|\\bx\\s*(\\d{1,2})\\b|\\b(\\d{1,2})\\s*x\\b", RegexOption.IGNORE_CASE)
-        num.find(rest)?.let { m ->
+        // A bare number right after a product word is a model, not a count: "iphone 15 case", "pixel 9 case", "note 13 cover".
+        num.findAll(rest).firstOrNull { m -> m.groupValues[1].isEmpty() || countLead(rest.substring(0, m.range.first)) }?.let { m ->
             val n = (m.groupValues[1].ifEmpty { m.groupValues[2] }.ifEmpty { m.groupValues[3] }).toIntOrNull()
             if (n != null && n in 1..20) { qty = n; rest = singularFrom(rest.removeRange(m.range), m.range.first) }
         }
@@ -43,6 +44,13 @@ object Extras {
         }
         return Parsed(qty, address, rest.replace(Regex("\\s{2,}"), " ").trim())
     }
+
+    /** Words a count follows ("order 2 …", "get me 3 …", "and 2 …"); the start of the command counts too. */
+    private val COUNT_LEAD = setOf("order", "get", "add", "buy", "put", "want", "need", "send", "bring", "grab", "me", "us",
+        "and", "also", "just", "only", "please", "like", "of")
+
+    private fun countLead(before: String): Boolean =
+        Regex("(\\p{L}+)[^\\p{L}\\p{N}]*$").find(before)?.groupValues?.get(1)?.lowercase()?.let { it in COUNT_LEAD } ?: before.isBlank()
 
     /**
      * The counted words go back to one: "2 margheritas from dominos" → "margherita from dominos".

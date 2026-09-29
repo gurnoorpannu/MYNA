@@ -34,6 +34,17 @@ class IntentEdgeTest {
         assertNull(Extras.parse("order 50 margheritas").qty)   // above 20: not trusted as a count
     }
 
+    @Test fun modelNumbersAreNotQuantities() {
+        // T9-style product changes: the number belongs to the product name, so no stepper taps.
+        for (said in listOf("add an iphone 15 case to my amazon cart", "add a pixel 9 case", "add a redmi note 13 cover to my cart"))
+            assertNull(said, Extras.parse(said).qty)
+        assertEquals("add an iphone 15 case to my amazon cart", Extras.parse("add an iphone 15 case to my amazon cart").rest)
+        // ...while a count still works in the same kind of sentence.
+        for ((said, n) in listOf("add 2 iphone 15 cases" to 2, "i want 2 pizzas" to 2, "put 3 phone cases in my cart" to 3,
+                "2 margheritas please" to 2, "please order 2 margheritas" to 2, "can you get me 2 farmhouse" to 2))
+            assertEquals(said, n, Extras.parse(said).qty)
+    }
+
     @Test fun countedWordIsMadeSingularButTheRestaurantIsNot() {
         assertEquals("order margherita from dominos", Extras.parse("order two margheritas from dominos").rest)
         val rest = Extras.parse("order a couple of farmhouse pizzas").rest
