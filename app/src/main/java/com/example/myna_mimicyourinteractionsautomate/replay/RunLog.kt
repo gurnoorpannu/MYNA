@@ -16,6 +16,20 @@ data class RunLog(
     val slots: Map<String, String> = emptyMap(),  // the blank values this run used
 )
 
+/** T14: "Did it work?" answered in one sentence from this run log. */
+fun RunLog.report(): String {
+    val what = utterance
+    return when (outcome) {
+        Outcome.HANDED_OFF -> "Yes. For \"$what\" I reached the payment step and handed it to you."
+        Outcome.DONE -> "Yes, \"$what\" finished."
+        Outcome.STOPPED -> "You stopped it at step ${steps.size}."
+        else -> {
+            val s = steps.lastOrNull { it.status != "ok" } ?: steps.lastOrNull()
+            "No. It stopped at step ${s?.index}, ${s?.what}, because $reason."
+        }
+    }
+}
+
 @Serializable
 enum class Outcome {
     RUNNING,

@@ -78,8 +78,8 @@ import com.example.myna_mimicyourinteractionsautomate.recipe.RecipeJson
 import com.example.myna_mimicyourinteractionsautomate.recipe.Recipes
 import com.example.myna_mimicyourinteractionsautomate.recipe.Recording
 import com.example.myna_mimicyourinteractionsautomate.record.describe
-import com.example.myna_mimicyourinteractionsautomate.replay.Outcome
 import com.example.myna_mimicyourinteractionsautomate.replay.RunLog
+import com.example.myna_mimicyourinteractionsautomate.replay.report
 import com.example.myna_mimicyourinteractionsautomate.replay.Slots
 import com.example.myna_mimicyourinteractionsautomate.ui.AppBadge
 import com.example.myna_mimicyourinteractionsautomate.ui.AutomationCard
@@ -752,19 +752,7 @@ class MainActivity : ComponentActivity() {
     }
 
     /** T14: "Did it work?" answered from the last run log. */
-    private fun lastRunReport(): String {
-        val log = runs.firstOrNull() ?: return "I haven't run anything yet."
-        val what = log.utterance
-        return when (log.outcome) {
-            Outcome.HANDED_OFF -> "Yes. For \"$what\" I reached the payment step and handed it to you."
-            Outcome.DONE -> "Yes, \"$what\" finished."
-            Outcome.STOPPED -> "You stopped it at step ${log.steps.size}."
-            else -> {
-                val s = log.steps.lastOrNull { it.status != "ok" } ?: log.steps.lastOrNull()
-                "No. It stopped at step ${s?.index}, ${s?.what}, because ${log.reason}."
-            }
-        }
-    }
+    private fun lastRunReport(): String = runs.firstOrNull()?.report() ?: "I haven't run anything yet."
 
     private fun replay(list: List<Recipe>, slots: Map<String, String> = emptyMap()) {
         MynaService.instance?.replay(list, slots) { runOnUiThread { refresh() } }
