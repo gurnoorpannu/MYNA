@@ -6,6 +6,7 @@ import com.example.myna_mimicyourinteractionsautomate.recipe.Step
 import com.example.myna_mimicyourinteractionsautomate.recipe.StepType
 import com.example.myna_mimicyourinteractionsautomate.recipe.SystemKey
 import com.example.myna_mimicyourinteractionsautomate.recipe.Target
+import com.example.myna_mimicyourinteractionsautomate.replay.Privacy
 
 /**
  * Turns a stream of already-filtered UI events into recorded steps (design §4.1).
@@ -108,7 +109,8 @@ class Recorder(
         Recording(utterance, app, startedAt, steps.toList(), stoppedBy, reason, snapshots.toMap())
 
     private fun add(step: Step) {
-        steps += step
+        // Messaging apps: chat previews and other chats around the tap are never stored.
+        steps += if (Privacy.isPrivate(app)) step.copy(target = step.target?.let(Privacy::scrub)) else step
         awaitingNext = true
     }
 
