@@ -117,10 +117,10 @@ Rules only, no AI. Checked on every settled screen and before every tap or typed
 |---|---|
 | Credentials | password fields; fields asking for OTP, CVV, card number, UPI PIN |
 | Payment | known payment apps; 3+ payment-method kinds on screen (UPI, card, net banking, wallet, COD, EMI), or 2 with payment radio buttons |
-| Final order | any tappable *Place Order / Pay ₹ / Proceed to pay* |
+| Final order | any tappable *Place Order / Pay ₹ / Proceed to pay*, or a button that leads into payment (*Add / Select payment method*) |
 | Login | a text field plus a *Log in / Send OTP / Verify* button |
 
-Tuned on real screens: a cart advertising card offers, Amazon's "Wallet" tab and product pages with colour radios are **not** payment screens. The single exception: on a *Place Order* screen (never a payment or credential screen) MYNA may use the **address picker** for "deliver to Work"; the Place Order button itself stays blocked. `GatedActor` is the only code allowed to tap or type in another app.
+Tuned on real screens: a cart advertising card offers, Amazon's "Wallet" tab and product pages with colour radios are **not** payment screens. The single exception: on a *Place Order* screen (never a payment or credential screen) MYNA may use the **address picker** for "deliver to Work"; the Place Order button itself stays blocked. In practice the address is switched earlier, right after the app opens, from its home header ("Home ▾ …" → saved addresses → Work); an address the app says it can't deliver to stops the run with that reason. `GatedActor` is the only code allowed to tap or type in another app.
 
 ## 8. Where things live
 
