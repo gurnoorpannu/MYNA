@@ -45,6 +45,12 @@ class CompilerTest {
         assertEquals(setOf(2), blanks[1].hits.map { it.step }.toSet())         // search query + pick
     }
 
+    @Test fun halfTypedWithATypoIsStillTheBlank() {
+        // 29 Sep, Galaxy M34: typed "margerit", then picked Margherita from the list.
+        val typo = rec.copy(steps = rec.steps.map { if (it.type == StepType.TYPE) it.copy(text = "margerit") else it })
+        assertEquals("Margherita", Compiler.findBlanks(typo).first().value)
+    }
+
     @Test fun compiledRecipeReplaysWithFarmhouse() = runBlocking {
         Llm.mock = true
         Llm.canned["compile"] = """{"summary":"order {item} from {restaurant} on Zomato","names":["item","restaurant"],

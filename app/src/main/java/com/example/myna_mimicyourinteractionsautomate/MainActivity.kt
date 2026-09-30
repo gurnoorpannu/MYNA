@@ -3,10 +3,8 @@ package com.example.myna_mimicyourinteractionsautomate
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
-import android.speech.RecognizerIntent
 import android.text.format.DateUtils
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge

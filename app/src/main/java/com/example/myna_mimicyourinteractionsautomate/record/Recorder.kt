@@ -1,6 +1,8 @@
 package com.example.myna_mimicyourinteractionsautomate.record
 
 import com.example.myna_mimicyourinteractionsautomate.recipe.Recording
+import com.example.myna_mimicyourinteractionsautomate.screen.Identity
+import com.example.myna_mimicyourinteractionsautomate.screen.UiNode
 import com.example.myna_mimicyourinteractionsautomate.recipe.Screen
 import com.example.myna_mimicyourinteractionsautomate.recipe.Step
 import com.example.myna_mimicyourinteractionsautomate.recipe.StepType
@@ -53,6 +55,19 @@ class Recorder(
             last.type == StepType.GOAL && last.goal == "search" && pick != null -> last.copy(args = mapOf("pick" to pick))
             else -> return
         }
+    }
+
+    /**
+     * Typed "galaxy m34 ph", tapped the suggestion "galaxy m34 phone case" (web lists send no event): the results
+     * page shows the full search at the top. Learn that, not the half-typed text.
+     */
+    fun completeTyped(root: UiNode) {
+        val last = steps.lastOrNull()?.takeIf { it.type == StepType.TYPE || (it.type == StepType.GOAL && it.goal == "search") } ?: return
+        val want = Identity.loose(last.text ?: return).ifEmpty { return }
+        val top = root.t + (root.b - root.t) / 4
+        val full = root.walk().filter { it.visible && it.t < top }.mapNotNull { it.label }
+            .firstOrNull { l -> Identity.loose(l).let { it.startsWith(want) && it.length > want.length } } ?: return
+        steps[steps.lastIndex] = last.copy(text = full)
     }
 
     /** A bottom sheet closed with no visible tap and no Back: the user pressed its main button, keeping the shown options. */

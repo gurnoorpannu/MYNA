@@ -299,6 +299,7 @@ class MynaService : AccessibilityService(), Device {
             val query = rec.lastTyped
             if (rec.inSearch && query != null) {
                 // Typed, then landed somewhere new without a visible tap: it's a search. Name where we landed.
+                rec.completeTyped(root)
                 rec.onSearchLanded(Identity.pickedResult(root, query))
             } else {
                 Identity.inferTap(prev.first, root)?.let { rec.onInferredTap(Identity.target(it, prev.first, rec.spoken), prev.second) }
@@ -306,7 +307,7 @@ class MynaService : AccessibilityService(), Device {
         } else if (prev != null && rec.steps.size == stepsAtPrevSettle && screen.pkg == prev.second.pkg &&
             rec.steps.lastOrNull()?.let { it.type == StepType.TYPE && !it.submit } != true) {   // not while typing
             // Same activity, new content, no event (taps inside web pages): infer from what's new on screen.
-            if (rec.resultsPending) rec.resultsPending = false
+            if (rec.resultsPending) { rec.resultsPending = false; rec.completeTyped(root) }
             else Identity.inferByDiff(prev.first, root)?.let { rec.onInferredTap(Identity.target(it, prev.first, rec.spoken), prev.second) }
         }
         prevSettled = root to screen
@@ -445,10 +446,17 @@ class MynaService : AccessibilityService(), Device {
 
     /** Only called by [actor], after the gate said yes. */
     private fun clickNode(n: UiNode): Boolean {
+        // Web pages accept a click action and then ignore it (Amazon's "Proceed to checkout" on the M34, 29 Sep):
+        // inside a WebView, tap with a finger-like gesture instead.
+        // Only the part inside the page counts: a button half under the app's bottom tabs gets its visible half tapped,
+        // or a click action if none of it shows (a finger there would hit "Cart").
+        val web = n.ancestors().firstOrNull { it.cls == "WebView" }
+        val top = maxOf(n.t, web?.t ?: n.t); val bottom = minOf(n.b, web?.b ?: n.b)
+        val gestureFirst = web != null && bottom - top >= 30
         val live = n.live as? AccessibilityNodeInfo
-        if (live?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true) return true
+        if (!gestureFirst && live?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true) return true
         // Click refused (custom views): tap the centre of its bounds.
-        val x = (n.l + n.r) / 2f; val y = (n.t + n.b) / 2f
+        val x = (n.l + n.r) / 2f; val y = if (gestureFirst) (top + bottom) / 2f else (n.t + n.b) / 2f
         return gesture(Path().apply { moveTo(x, y) }, 80, "tap ($x,$y) on $n")
     }
 

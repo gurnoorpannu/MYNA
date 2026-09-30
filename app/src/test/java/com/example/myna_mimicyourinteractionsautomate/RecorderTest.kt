@@ -19,6 +19,14 @@ class RecorderTest {
     private fun tap(label: String) = Target(label = label, key = UniqueKey(KeyKind.LABEL, label))
     private val search = Target(label = "Search", id = "search", cls = "EditText")
 
+    @Test fun pickedSuggestionReplacesHalfTypedText() {
+        // Amazon: typed "galaxy m34 ph", tapped a web suggestion (no event); results show the full search on top.
+        rec.onText(search, "galaxy m34 ph", home)
+        rec.completeTyped(com.example.myna_mimicyourinteractionsautomate.screen.UiNode(b = 2340, children = listOf(
+            com.example.myna_mimicyourinteractionsautomate.screen.UiNode(text = "galaxy m34 phone case", id = "chrome_search_hint_view", t = 100, b = 180))))
+        assertEquals("galaxy m34 phone case", rec.steps.last().text)
+    }
+
     @Test fun typingMergesIntoFinalText() {
         rec.onTap(search, home)
         listOf("D", "Do", "Dom", "Domino's").forEach { rec.onText(search, it, home) }

@@ -59,7 +59,9 @@ object Compiler {
             // ("Margherita" for typed "margherita", not "Margherita pizza"). A lone word may also be typed as a prefix.
             if (span.any { it.lowercase() in STOP || loose(it) in appWords }) continue
             val s = loose(span.joinToString(" ")).takeIf { it.length >= 3 } ?: continue
-            val fits = span.all { v.contains(loose(it)) } || (span.size == 1 && s.startsWith(v))
+            // …or typed half-way with a typo and picked from the list ("margerit" for Margherita, 29 Sep).
+            val fits = span.all { v.contains(loose(it)) } || (span.size == 1 && s.startsWith(v)) ||
+                (span.size == 1 && v.length >= 5 && s.length >= v.length && com.example.myna_mimicyourinteractionsautomate.intent.SpeechFix.jaroWinkler(v, s.take(v.length)) >= 0.9)
             if (fits && s.length > bestLen) { best = i to j; bestLen = s.length }
         }
         return best
