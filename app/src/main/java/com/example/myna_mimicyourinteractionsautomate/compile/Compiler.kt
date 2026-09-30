@@ -150,6 +150,16 @@ object Compiler {
         }.maxOrNull()
     }
 
+    private val OPEN_CART = Regex("^(go to |view |my |your |shopping )?(cart|basket|bag)\\b", RegexOption.IGNORE_CASE)
+
+    /**
+     * The demo's last step opened the cart: the task is "put it in the cart", so replay ends there. Its cart may show a
+     * payment window (the gate hands off) or a "Proceed to checkout" button (30 Sep, Amazon) — never tap past it.
+     */
+    fun endsByOpeningCart(steps: List<Step>): Boolean = steps.lastOrNull { !it.noise }?.let { s ->
+        s.type == StepType.TAP && listOfNotNull(s.target?.label, s.target?.key?.value).any { OPEN_CART.containsMatchIn(it) }
+    } == true
+
     /** Rewrite the steps to use "{name}" wherever the blank's value was used. */
     fun applyBlanks(steps: List<Step>, blanks: List<Blank>): List<Step> {
         val out = steps.toMutableList()
@@ -268,7 +278,7 @@ object Compiler {
             slots = slots,
             defaults = defaults,
             subtasks = subtasks,
-            end = if (rec.stoppedBy == "safety_gate") End.PAYMENT_SCREEN else End.LAST_SCREEN,
+            end = if (rec.stoppedBy == "safety_gate" && !endsByOpeningCart(out)) End.PAYMENT_SCREEN else End.LAST_SCREEN,
             golden = golden,
         )
         return Result(recipe, removed, ai?.optJSONArray("questions")?.strings().orEmpty())
