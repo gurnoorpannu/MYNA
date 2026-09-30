@@ -216,7 +216,9 @@ class MynaService : AccessibilityService(), Device {
     }
 
     private fun onClick(pkg: String, src: AccessibilityNodeInfo) {
-        Log.d(TAG, "click $pkg ${src.className} text=\"${src.text}\" id=${src.viewIdResourceName} recording=${recorder != null}")
+        // Only while teaching, never in messaging apps, never the element's text (30 Sep: every tap in every app was logged).
+        if (recorder != null && !com.example.myna_mimicyourinteractionsautomate.replay.Privacy.isPrivate(pkg))
+            Log.d(TAG, "click $pkg ${src.className} id=${src.viewIdResourceName}")
         val rec = recorder ?: return
         if (pkg == launcherPkg) return
         val (root, node) = snapshotAround(src) ?: return
@@ -231,7 +233,9 @@ class MynaService : AccessibilityService(), Device {
 
     /** [eventText] = the event's own copy of the new text; Zomato's field value stays the placeholder while typing. */
     private fun onTextChanged(pkg: String, src: AccessibilityNodeInfo, eventText: String) {
-        Log.d(TAG, "text event=\"$eventText\" node=\"${src.text}\" hintShowing=${src.isShowingHintText}")
+        // Never the typed text: an OTP typed into any app used to land in logcat (no credential capture).
+        if (recorder != null && !com.example.myna_mimicyourinteractionsautomate.replay.Privacy.isPrivate(pkg))
+            Log.d(TAG, "text changed in $pkg (${eventText.length} chars)")
         val rec = recorder ?: return
         val (root, node) = snapshotAround(src) ?: return
         // Never record what goes into an OTP/password/card field.
@@ -597,7 +601,7 @@ class MynaService : AccessibilityService(), Device {
                     })
                 }
                 .addOnFailureListener { cont.resume(emptyList()) }
-        }.also { Log.d(TAG, "ocr: ${it.joinToString(" | ") { l -> l.text }.take(300)}") }
+        }.also { Log.d(TAG, "ocr: " + com.example.myna_mimicyourinteractionsautomate.replay.Privacy.mask(it.joinToString(" | ") { l -> l.text }.take(300))) }
     }
 
     private suspend fun screenshot(): Bitmap? = suspendCancellableCoroutine { cont ->
