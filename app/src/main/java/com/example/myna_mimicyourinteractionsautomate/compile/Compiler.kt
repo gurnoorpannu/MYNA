@@ -46,7 +46,11 @@ object Compiler {
      * letters: for "Domino's Pizza" in "…Margherita pizza from Domino's…", "Domino's" (7) beats "pizza" (5).
      */
     fun match(value: String, words: List<String>, appWords: Set<String>): Pair<Int, Int>? {
-        val v = loose(value).takeIf { it.length >= 3 } ?: return null
+        val v = loose(value).takeIf { it.length >= 2 } ?: return null
+        // Two letters typed ("ma" in Domino's menu search, 30 Sep) are that word only if exactly one spoken word starts so.
+        if (v.length == 2) return words.indices.filter { i ->
+            words[i].lowercase() !in STOP && loose(words[i]) !in appWords && loose(words[i]).startsWith(v)
+        }.singleOrNull()?.let { it to it }
         var best: Pair<Int, Int>? = null
         var bestLen = 0
         for (i in words.indices) for (j in i until minOf(words.size, i + 4)) {
