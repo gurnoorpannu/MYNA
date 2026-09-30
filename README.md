@@ -46,6 +46,11 @@ One screen recording per official test case (the official checks are from the PR
 | T13 | Ambiguity | *"Order pizza"* | Asks or confirms (*"Did you mean … like last time?"*), never a silent wrong guess | [▶ video](https://drive.google.com/file/d/1tV3k1J83YhE_SfjHM15MsHQAy6yXoRWg/view?usp=sharing) |
 | T14 | Reporting | *"Did the last run succeed?"* after T2 and T10 | Clear success/failure with the step where it stopped | [▶ video](https://drive.google.com/file/d/15ZNtt4ZM1P5HRv7ys_-oelMpMa4bSPHk/view?usp=sharing) |
 
+## Documentation
+
+- [Architecture (with diagrams)](docs/architecture.md)
+- [Known limitations](docs/limitations.md)
+
 ## Apps it works with
 
 MYNA isn't built for particular apps: it learns each task from your demo, so it works with any app you can open from the launcher. Nothing about any app is hard-coded.
@@ -76,13 +81,6 @@ Run the tests:
 - **Teach tab** → type or speak the command, pick the app, tap **Show me once**, do the task, and let the 🔒 stop it at checkout (or tap **■ Done**).
 - **Home tab** → tap the mic and speak, or tap **Run** on an automation card. **Make slight changes** edits the blanks (item, restaurant…) before running.
 - **History tab** → every run, every step, and why it stopped.
-
-## Documentation
-
-- [Architecture (with diagrams)](docs/architecture.md)
-- [Known limitations](docs/limitations.md)
-- [Demo video script](docs/demo-script.md)
-- [Presentation outline](docs/ppt-outline.md)
 
 ## Project layout
 
