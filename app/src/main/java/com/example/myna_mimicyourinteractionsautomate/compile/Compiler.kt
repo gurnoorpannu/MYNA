@@ -124,9 +124,31 @@ object Compiler {
     private fun removeLoose(text: String, spoken: String): String? =
         looseRegex(spoken)?.find(text)?.let { text.removeRange(it.range).trim() }?.takeIf { it.length >= 3 }
 
-    /** "s25ultra phone cases" with product = "phone case" → "s25ultra {product}s"; whole text if the part isn't found. */
-    fun template(text: String, spoken: String, ref: String): String =
-        looseRegex(spoken)?.find(text)?.let { text.replaceRange(it.range, ref) } ?: ref
+    /**
+     * "s25ultra phone cases" with product = "phone case" → "s25ultra {product}s". When the typed text is shorter than
+     * what was said ("nothing3a" for "nothing phone 3a"), only the typed words made of the spoken words are replaced:
+     * "phone case nothing3a" → "phone case {item}". Whole text only if no typed word comes from the blank at all.
+     */
+    fun template(text: String, spoken: String, ref: String): String {
+        looseRegex(spoken)?.find(text)?.let { return text.replaceRange(it.range, ref) }
+        val said = words(spoken).map(::loose).filter { it.isNotEmpty() }
+        val tokens = Regex("\\S+").findAll(text).toList()
+        var best: IntRange? = null
+        var bestUsed = 0
+        for (i in tokens.indices) for (j in i until tokens.size) {
+            val used = usedWords(loose(tokens.subList(i, j + 1).joinToString("") { it.value }), said) ?: continue
+            if (used > bestUsed) { best = tokens[i].range.first..tokens[j].range.last; bestUsed = used }
+        }
+        return best?.let { text.replaceRange(it, ref) } ?: ref
+    }
+
+    /** How many of [said] (in order, some may be skipped) spell exactly [s]; null if they can't. */
+    private fun usedWords(s: String, said: List<String>, from: Int = 0): Int? {
+        if (s.isEmpty()) return 0
+        return (from until said.size).mapNotNull { k ->
+            if (s.startsWith(said[k])) usedWords(s.removePrefix(said[k]), said, k + 1)?.plus(1) else null
+        }.maxOrNull()
+    }
 
     /** Rewrite the steps to use "{name}" wherever the blank's value was used. */
     fun applyBlanks(steps: List<Step>, blanks: List<Blank>): List<Step> {
