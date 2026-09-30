@@ -203,7 +203,9 @@ object Identity {
         if (before.isEmpty() || before.count { it !in after } * 2 < before.size) return null
         val fresh = next.walk().filter { it.visible && !it.editable }.mapNotNull { it.label?.let(::norm) }.filter { it !in before }.map(::stems).toList()
         if (fresh.isEmpty()) return null
-        val scored = prev.walk().filter { it.visible && it.clickable && !it.editable }.mapNotNull { n ->
+        // Text at the same place on both screens is the page's own chrome (Zomato's restaurant title, 30 Sep), not the tap.
+        val stay = next.walk().filter { it.visible && it.label != null }.map { norm(it.label!!) to it.bounds }.toSet()
+        val scored = prev.walk().filter { it.visible && it.clickable && !it.editable && it.label?.let { l -> (norm(l) to it.bounds) !in stay } != false }.mapNotNull { n ->
             val words = stems(n.label ?: primaryText(n) ?: return@mapNotNull null)
             if (words.size < 2) return@mapNotNull null
             val best = fresh.maxOf { f -> words.count { it in f } }
