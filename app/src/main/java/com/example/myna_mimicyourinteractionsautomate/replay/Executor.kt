@@ -370,6 +370,9 @@ class Executor(
     /** Press the open sheet's main button (OCR "Add item ₹109", else its blank button box). Done when the sheet is gone. */
     private suspend fun confirmSheet(sl: StepLog, choices: List<String>) {
         device.pause(SHEET_ANIMATION_MS)   // sheets slide in; positions read mid-animation miss the button
+        // The demo's ADD tap sent no event (30 Sep, Zomato, typed "ma" then ADD): no sheet yet right after typing a
+        // dish → tap ADD on the card that matches what was typed, then carry on with the sheet.
+        (unsubmitted ?: lastQuery)?.let { typed -> screen()?.let { (root, pkg) -> if (!Identity.isModal(root)) addOnTypedCard(root, pkg, typed, sl) } }
         selectChoices(choices, sl)
         // T5: set the count on the sheet's own stepper, before adding (after, "+" asks to repeat the customisation).
         if (wantQty > 1 && !qtyDone) qtyDone = setQty(wantQty, sl)
@@ -407,6 +410,20 @@ class Executor(
             }
         } finally { device.prompt(null) }
         throw Stop(Outcome.STUCK, "the options sheet needs your tap and nobody tapped it within ${USER_TAP_WAIT_MS / 1000} seconds")
+    }
+
+    /** "ADD" on the card whose text best matches [typed] ("Farmhouse" → the Farmhouse Pizza card, not the first one). */
+    private suspend fun addOnTypedCard(root: UiNode, pkg: String, typed: String, sl: StepLog) {
+        val want = Identity.stems(typed).ifEmpty { return }
+        val add = root.walk().filter { it.visible && it.clickable && it.label?.let(ADD_WORD::containsMatchIn) == true }.mapNotNull { n ->
+            val row = Identity.listItem(n) ?: n.ancestors().take(7).firstOrNull { a -> a.walk().any { it !== n && (it.label?.length ?: 0) >= 4 } } ?: return@mapNotNull null
+            val flat = Identity.loose(row.walk().mapNotNull { it.label }.joinToString(" "))
+            n to want.count { w -> Identity.loose(w).let { it.isNotEmpty() && flat.contains(it) } }
+        }.filter { it.second > 0 }.maxByOrNull { it.second }?.first ?: return
+        sl.note = "tapped ${add.label} on the card matching \"$typed\" (the demo's tap sent no event)"
+        if (device.actor.tap(add, root, pkg) is GatedActor.Result.Blocked) throw Stop(Outcome.HANDED_OFF, "blocked adding \"$typed\"")
+        lastTapped = add
+        device.pause(SHEET_ANIMATION_MS)
     }
 
     /** The sheet had no stepper (or it failed): the menu row now shows "− 1 +", so set the count there. */
