@@ -592,17 +592,23 @@ class Executor(
         val name = wantAddress ?: return
         val names = when (name.lowercase()) { "work", "office" -> listOf("work", "office"); else -> listOf(name.lowercase()) }
         val named = { l: String -> names.any { Regex("\\b$it\\b", RegexOption.IGNORE_CASE).containsMatchIn(l) } }
+        // "DOES NOT DELIVER TO" on an address card (Zomato, 30 Sep) says the opposite of "Delivering to".
+        val delivering = { l: String -> DELIVERING.containsMatchIn(l) && !NOT_DELIVER.containsMatchIn(l) }
         repeat(5) {
             val (root, pkg) = screen() ?: return
             val texts = root.walk().filter { it.visible }.toList()
             // Already delivering there?
-            if (texts.any { n -> n.label?.let { l -> DELIVERING.containsMatchIn(l) && named(l) } == true ||
-                    (n.label?.let(named) == true && n.parent?.walk()?.any { c -> c.label?.let(DELIVERING::containsMatchIn) == true } == true) }) {
+            if (texts.any { n -> n.label?.let { l -> delivering(l) && named(l) } == true ||
+                    (n.label?.let(named) == true && n.parent?.walk()?.any { c -> c.label?.let(delivering) == true } == true) }) {
                 addressDone = true; log.steps += StepLog(log.steps.size + 1, "deliver to $name", "ok", note = "address set"); return
             }
             // Picker open (a sheet/list with the saved addresses): tap the one with that name.
             val row = texts.firstOrNull { it.clickable && it.walk().any { c -> c.label?.let(named) == true } }
-            val opener = texts.firstOrNull { it.clickable && it.walk().any { c -> c.label?.let { l -> DELIVERING.containsMatchIn(l) || l.equals("change", true) } == true } }
+            // The app says it can't deliver there: a clear stop with its words, not a false "address set".
+            row?.walk()?.mapNotNull { it.label }?.firstOrNull(NOT_DELIVER::containsMatchIn)?.let {
+                throw Stop(Outcome.STUCK, "this restaurant doesn't deliver to $name — the address list says \"$it\"")
+            }
+            val opener = texts.firstOrNull { it.clickable && it.walk().any { c -> c.label?.let { l -> delivering(l) || l.equals("change", true) } == true } }
             val tap = if (row != null && (Identity.isModal(root) || opener == null)) row else opener ?: row ?: return
             if (device.actor.tap(tap, root, pkg, addressPick = true) !is GatedActor.Result.Done) return
             // Some apps ask to confirm the picked address.
@@ -663,6 +669,7 @@ class Executor(
         private val ADD_WORD = Regex("^(add|add to (cart|bag|basket))\\b", RegexOption.IGNORE_CASE)
         private val REPEAT = Regex("^(repeat)\\b", RegexOption.IGNORE_CASE)
         private val DELIVERING = Regex("\\b(deliver(ing)?|delivery) (to|at)\\b", RegexOption.IGNORE_CASE)
+        private val NOT_DELIVER = Regex("\\b(does ?n.?t|not|cannot|can.?t|won.?t) deliver", RegexOption.IGNORE_CASE)
         private val CONFIRM_ADDRESS = Regex("^(deliver here|use this address|confirm (location|address)|done)\\b", RegexOption.IGNORE_CASE)
         private val AI_SCHEMA = org.json.JSONObject("""{"title":"helper","type":"object","required":["action"],
             "properties":{"action":{"type":"string","enum":["tap","stuck"]},"id":{"type":["integer","null"]},"reason":{"type":"string"}}}""")

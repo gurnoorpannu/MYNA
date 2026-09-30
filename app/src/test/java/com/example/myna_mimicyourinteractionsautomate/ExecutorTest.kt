@@ -99,8 +99,10 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
         // The cart: "Delivering to Home" opens a picker sheet with the saved addresses.
         "cart" -> if (addressPicker) UiNode(cls = "FrameLayout", b = 2400, children = listOf(UiNode(id = "touch_outside", clickable = true, b = 2400, r = 1080),
             t("Select an address", 1400),
-            UiNode(clickable = true, t = 1500, b = 1600, children = listOf(t("Home", 1510), t("50 Harkishan Garden", 1550))),
-            UiNode(clickable = true, t = 1650, b = 1750, children = listOf(t("Work", 1660), t("Ranjit Avenue", 1700))),
+            UiNode(clickable = true, t = 1500, b = 1600, children = listOf(t("Home", 1510), t("50 Harkishan Garden", 1550), t("DELIVERS TO", 1590))),
+            // 30 Sep: each saved address card says whether this restaurant delivers there.
+            UiNode(clickable = true, t = 1650, b = 1750, children = listOf(t("Work", 1660), t("Ranjit Avenue", 1700),
+                t(if (workOutOfRange) "DOES NOT DELIVER TO" else "DELIVERS TO", 1740))),
             UiNode(id = "cv_checkout_container", clickable = true, t = 2200, b = 2400, children = listOf(t("Place Order", 2260)))))
         else UiNode(cls = "FrameLayout", b = 2400, children = listOf(t("Domino's Pizza", 100), t(cart.joinToString(), 300),
             UiNode(id = "address_chip", clickable = true, t = 2000, b = 2080, children = listOf(t("Delivering to $address", 2010))),
@@ -128,6 +130,7 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
     var menuSearch: String? = null    // in-menu search box open (null = closed), with its text
     var sheetQty = 1                  // the sheet's "− 1 +" stepper
     var address = "Home"; var addressPicker = false
+    var workOutOfRange = false        // Work is outside the restaurant's delivery area
     var closed = false
     var ignoresA11yTaps = false       // Zomato's real "Add item": only a finger works
     var userTapsSheet = false
@@ -237,6 +240,17 @@ class ExecutorTest {
         assertEquals(log.reason, Outcome.HANDED_OFF, log.outcome)
         assertEquals("Work", z.address)
         assertFalse(z.taps.any { it.contains("checkout") })
+    }
+
+    @Test fun t6WorkOutsideTheDeliveryAreaIsAClearStopNotAFalseSuccess() = runBlocking {
+        // 30 Sep 19:17 on the phone: Work was listed under "DOES NOT DELIVER TO"; MYNA logged "deliver to Work — address set"
+        // (it read "DELIVER TO" next to Work as already delivering there) and left the user on the address list.
+        val z = FakeZomato().apply { workOutOfRange = true }
+        val log = Executor(z).run(recipe, demo + ("address" to "Work"))
+        assertEquals(log.reason, Outcome.STUCK, log.outcome)
+        assertTrue(log.reason, log.reason!!.contains("doesn't deliver to Work"))
+        assertEquals("Home", z.address)
+        assertTrue(log.steps.none { it.note == "address set" })
     }
 
     @Test fun t10ClosedRestaurantStopsWithTheReason() = runBlocking {
