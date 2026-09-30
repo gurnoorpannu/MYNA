@@ -77,6 +77,9 @@ class Executor(
         return null
     }
 
+    /** The current step comes right after a search: if its target is missing, recover by opening a result, not by an AI guess. */
+    private var noAiGuess = false
+
     /** Text typed by the previous step and not submitted yet: if the next target doesn't show up, press Enter. */
     private var unsubmitted: String? = null
 
@@ -96,6 +99,10 @@ class Executor(
                 val t0 = device.now()
                 val pending = unsubmitted
                 val query = lastQuery
+                // Right after a search whose result wasn't recorded, a missing target means "open the result first"
+                // (recovery below), not an AI guess on the suggestion list (30 Sep 18:22: it tapped the search box).
+                val before = steps.getOrNull(i - 1)
+                noAiGuess = before != null && ((before.type == StepType.TYPE && before.submit) || (before.goal == "search" && before.args["pick"] == null))
                 while (true) {
                     try {
                         // T6: the cart page's "Deliver to …" comes before Proceed/Checkout (Amazon).
@@ -123,7 +130,9 @@ class Executor(
                             // Still on the results page (opening a result wasn't recorded): open the best match, then retry.
                             sl.note = "opening the best result for \"${Slots.fill(prev.text, slots)}\" first"
                             if (retries > 1) device.key(SystemKey.BACK)
-                            pickResult(Slots.fill(prev.text, slots).orEmpty(), prev, sl)
+                            // A search goal: search again and hop to the page named like the search (suggestion → page).
+                            if (prev.goal == "search") search(prev.copy(args = prev.args + ("pick" to prev.text!!)), slots, sl)
+                            else pickResult(Slots.fill(prev.text, slots).orEmpty(), prev, sl)
                         }
                     }
                 }
@@ -294,7 +303,7 @@ class Executor(
                 continue
             }
             // Last resort: one AI pick from a short numbered list of what's on screen (never random taps).
-            if (aiHelper && !aiTried) {
+            if (aiHelper && !aiTried && !noAiGuess) {
                 aiTried = true
                 aiPick(root, step, target)?.let { n -> sl.note = "AI helper picked \"${n.label ?: Identity.primaryText(n) ?: n.id}\""; sl.level = 5
                     if (device.actor.tap(n, root, pkg) is GatedActor.Result.Done) { screen(); sl.status = "ok"; return } }

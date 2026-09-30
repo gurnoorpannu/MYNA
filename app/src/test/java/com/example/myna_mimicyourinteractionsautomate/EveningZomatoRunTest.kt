@@ -1,5 +1,6 @@
 package com.example.myna_mimicyourinteractionsautomate
 
+import com.example.myna_mimicyourinteractionsautomate.llm.Llm
 import com.example.myna_mimicyourinteractionsautomate.recipe.End
 import com.example.myna_mimicyourinteractionsautomate.recipe.KeyKind
 import com.example.myna_mimicyourinteractionsautomate.recipe.Recipe
@@ -25,6 +26,24 @@ import org.junit.Test
 class EveningZomatoRunTest {
     private val app = "com.application.zomato"
     private val en = Screen("s", lang = "en")
+
+    @Test fun searchWithoutPickOpensTheSearchedRestaurantBeforeTheAiHelperGuesses() = runBlocking {
+        // The search step had no saved result; "tap button1" wasn't on the suggestion list and the AI helper picked
+        // "Type to search restaurants or dishes" instead (counted as ok). Recovery must open Domino's first.
+        Llm.mock = true
+        Llm.canned["helper"] = """{"action":"tap","id":0}"""   // the helper's wrong pick: the first tappable thing
+        val recipe = Recipe("z", app, "order from dominos", end = End.LAST_SCREEN, subtasks = listOf(Subtask("demo", steps = listOf(
+            Step(StepType.LAUNCH, pkg = app, screen = en),
+            Step(StepType.GOAL, goal = "search", text = "Domino's pizza", screen = en,
+                target = Target(label = "Restaurant name or a dish...", id = "edittext", key = UniqueKey(KeyKind.ID, "edittext"))),
+            Step(StepType.TAP, target = Target(id = "button1", key = UniqueKey(KeyKind.ID, "button1")), screen = en)))))
+        val z = FakeZomato().apply { state = "search" }
+        val log = Executor(z, aiHelper = true).run(recipe)
+        Llm.canned.remove("helper")
+        assertEquals(log.reason, Outcome.DONE, log.outcome)
+        assertTrue(z.taps.toString(), "button1" in z.taps)
+        assertTrue(log.steps.none { it.level == 5 })   // no AI guess needed
+    }
 
     /** Domino's menu shaped like the phone: ADD is a clickable View whose "ADD" text is a child TextView. */
     private class ChildTextAdd : Device {
