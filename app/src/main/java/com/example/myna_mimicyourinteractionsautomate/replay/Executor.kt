@@ -415,7 +415,8 @@ class Executor(
     /** "ADD" on the card whose text best matches [typed] ("Farmhouse" → the Farmhouse Pizza card, not the first one). */
     private suspend fun addOnTypedCard(root: UiNode, pkg: String, typed: String, sl: StepLog) {
         val want = Identity.stems(typed).ifEmpty { return }
-        val add = root.walk().filter { it.visible && it.clickable && it.label?.let(ADD_WORD::containsMatchIn) == true }.mapNotNull { n ->
+        // Zomato's ADD is a clickable View whose "ADD" text is a child (30 Sep 18:25 run).
+        val add = root.walk().filter { it.visible && it.clickable && (it.label ?: Identity.primaryText(it))?.let(ADD_WORD::matches) == true }.mapNotNull { n ->
             val row = Identity.listItem(n) ?: n.ancestors().take(7).firstOrNull { a -> a.walk().any { it !== n && (it.label?.length ?: 0) >= 4 } } ?: return@mapNotNull null
             val flat = Identity.loose(row.walk().mapNotNull { it.label }.joinToString(" "))
             n to want.count { w -> Identity.loose(w).let { it.isNotEmpty() && flat.contains(it) } }
