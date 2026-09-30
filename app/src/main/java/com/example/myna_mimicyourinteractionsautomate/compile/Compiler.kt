@@ -144,6 +144,16 @@ object Compiler {
             val used = usedWords(loose(tokens.subList(i, j + 1).joinToString("") { it.value }), said) ?: continue
             if (used > bestUsed) { best = tokens[i].range.first..tokens[j].range.last; bestUsed = used }
         }
+        // Typed longer than said ("nothing phone 3a" for "nothing 3a"): a run that starts and ends with spoken words,
+        // with at most 2 extra typed words inside, is still that blank — else the extras stay behind in every search.
+        if (bestUsed < said.size) for (i in tokens.indices) for (j in i + 1 until tokens.size) {
+            var from = 0; var used = 0; var extra = 0
+            for (x in i..j) {
+                val hit = (from until said.size).firstOrNull { loose(tokens[x].value) == said[it] }
+                if (hit != null) { used++; from = hit + 1 } else if (x == i || x == j) { used = -1; break } else extra++
+            }
+            if (used > bestUsed && extra <= 2) { best = tokens[i].range.first..tokens[j].range.last; bestUsed = used }
+        }
         return best
     }
 

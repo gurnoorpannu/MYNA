@@ -41,6 +41,14 @@ class ShortTypedSearchTest {
         assertEquals("{item} {item1}", searchStepAfterCompile("phone cover nothing 3", said = "add phone cover for my nothing phone 3 to my Amazon card"))
     }
 
+    @Test fun typedLongerThanSaidIsOneBlankWithNoLeftovers() {
+        // 10:18 re-teach: said "nothing 3a", typed "nothing phone 3a". The search became "{product} for {query} phone 3a",
+        // so "add a laptop stand" searched "laptop stand … phone 3a".
+        assertEquals("{item} for {item1}",
+            searchStepAfterCompile("phone cover for nothing phone 3a", said = "add a phone cover for nothing 3a in my amazon cart"))
+        assertEquals("phone cover for {q}", Compiler.template("phone cover for nothing phone 3a", "nothing 3a", "{q}"))
+    }
+
     @Test fun templateReplacesOnlyTheTypedPartOfTheBlank() {
         assertEquals("phone case {item}", Compiler.template("phone case nothing3a", "nothing phone 3a", "{item}"))
         assertEquals("{item} phone cases", Compiler.template("s25ultra phone cases", "S25 Ultra", "{item}"))   // one piece: unchanged behaviour
