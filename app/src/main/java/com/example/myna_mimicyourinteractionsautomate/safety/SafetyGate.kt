@@ -27,6 +27,8 @@ object SafetyGate {
     private val COMMIT = Regex(
         "\\b(place (your )?order|pay\\s*(now|₹|rs\\.?|inr|\\d)|proceed to pay|make payment|complete (the )?payment|" +
             "confirm (and|&) pay|(slide|swipe) to pay|pay securely|buy now and pay|" +
+            // A cart whose main button leads into payment (Zomato with no saved method, 30 Sep: "Add Payment Method").
+            "(add|select|choose|change) (a )?payment (method|option|mode)s?|proceed to payment|" +
             // WhatsApp ordering: sending the cart to the business IS placing the order.
             "send (to business|order|cart)|send your (order|cart))\\b", RegexOption.IGNORE_CASE)
 

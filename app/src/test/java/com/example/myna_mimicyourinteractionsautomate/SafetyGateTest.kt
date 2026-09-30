@@ -80,6 +80,17 @@ class SafetyGateTest {
         assertEquals(Kind.FINAL_ORDER, SafetyGate.checkTap(send, chat, "com.whatsapp")?.kind)
     }
 
+    @Test fun cartWhoseMainButtonAddsAPaymentMethodIsTheHandOffPoint() {
+        // 30 Sep 18:35, Zomato with no saved payment method: the cart's bar said "Add Payment Method" instead of
+        // "Place Order". The gate let it through, the tap was recorded, and replay later tried to tap it.
+        val cart = screen(text("Domino's Pizza"), text("Margherita Pizza"),
+            UiNode(id = "cv_checkout_container", clickable = true, children = listOf(text("₹239"), text("Add Payment Method"))))
+        assertEquals(Kind.FINAL_ORDER, SafetyGate.check(cart, "com.application.zomato")?.kind)
+        for (s in listOf("Select payment method", "Choose payment option", "Proceed to payment", "Change payment mode"))
+            assertEquals(s, Kind.FINAL_ORDER, SafetyGate.checkTap(button(s), screen(text("Cart")), "x")?.kind)
+        assertNull(SafetyGate.check(screen(text("Payment offers"), button("View Cart")), "x"))   // a word, not the button
+    }
+
     @Test fun tapLevelBlocksCommitTargetsEvenOnSafeScreens() {
         val pay = button("Pay now")
         assertEquals(Kind.FINAL_ORDER, SafetyGate.checkTap(pay, screen(text("Cart")), "x")?.kind)
