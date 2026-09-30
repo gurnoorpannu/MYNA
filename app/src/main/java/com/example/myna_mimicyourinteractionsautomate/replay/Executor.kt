@@ -596,7 +596,7 @@ class Executor(
         val named = { l: String -> names.any { Regex("\\b$it\\b", RegexOption.IGNORE_CASE).containsMatchIn(l) } }
         // "DOES NOT DELIVER TO" on an address card (Zomato, 30 Sep) says the opposite of "Delivering to".
         val delivering = { l: String -> DELIVERING.containsMatchIn(l) && !NOT_DELIVER.containsMatchIn(l) }
-        repeat(5) {
+        repeat(8) {   // room for a splash screen, the header, the list, a confirmation and the final check
             val (root, pkg) = screen() ?: return
             val texts = root.walk().filter { it.visible }.toList()
             // The app's home header naming the current address ("Home" + the street, top of Zomato's home, 30 Sep).
@@ -618,7 +618,9 @@ class Executor(
                 throw Stop(Outcome.STUCK, "this restaurant doesn't deliver to $name — the address list says \"$it\"")
             }
             val opener = texts.firstOrNull { it.clickable && it.walk().any { c -> c.label?.let { l -> delivering(l) || l.equals("change", true) } == true } }
-            val tap = if (row != null && (Identity.isModal(root) || (opener == null && header == null))) row else opener ?: header ?: row ?: return
+            // Nothing to tap yet (the app's splash/loading screen right after launch, 30 Sep): wait and look again.
+            val tap = if (row != null && (Identity.isModal(root) || (opener == null && header == null))) row else opener ?: header ?: row
+            if (tap == null) { device.pause(1_000); return@repeat }
             if (device.actor.tap(tap, root, pkg, addressPick = true) !is GatedActor.Result.Done) return
             // Some apps ask to confirm the picked address.
             screen()?.let { (r2, p2) ->

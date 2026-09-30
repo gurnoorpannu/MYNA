@@ -116,7 +116,9 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
         else -> error(state)
     }
 
-    override suspend fun screen() = build() to "com.application.zomato"
+    var splashReads = 0               // 30 Sep: Zomato shows a splash/loading screen for a moment after launch
+    override suspend fun screen() = (if (state == "home" && splashReads-- > 0) UiNode(cls = "FrameLayout", b = 2400, children = listOf(t("zomato", 1100)))
+        else build()) to "com.application.zomato"
     override val actor = GatedActor(click = ::click, setText = { n, s, _ -> if (state == "menu") menuSearch = s else typed = s; n.id == "edittext" }, onBlocked = { blocks += it.reason })
     override suspend fun launchClean(pkg: String) = true.also { state = "home" }
     override fun key(key: SystemKey) {}
@@ -260,6 +262,15 @@ class ExecutorTest {
         assertEquals("Work", z.address)
         assertEquals(listOf("Margherita Pizza"), z.cart)
         assertTrue(log.steps[0].note.orEmpty(), log.steps[0].note.orEmpty().contains("delivery address set to Work"))   // on "open Zomato"
+    }
+
+    @Test fun t6AddressHeaderIsFoundOnceTheHomeScreenHasLoaded() = runBlocking {
+        // 30 Sep 19:52 on the phone: the switch looked once, right after launch, saw Zomato's splash (no header) and gave up.
+        val z = FakeZomato().apply { splashReads = 3 }
+        val log = Executor(z).run(recipe, demo + ("address" to "Work"))
+        assertEquals(log.reason, Outcome.HANDED_OFF, log.outcome)
+        assertEquals("Work", z.address)
+        assertTrue(log.steps[0].note.orEmpty(), log.steps[0].note.orEmpty().contains("delivery address set to Work"))
     }
 
     @Test fun t6WorkOutsideTheDeliveryAreaIsAClearStopNotAFalseSuccess() = runBlocking {
