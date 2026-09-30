@@ -58,7 +58,9 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
             UiNode(clickable = true, t = 1380, b = 1690, children = listOf(t("Work", 1490), t("Ranjit Avenue", 1550),
                 t(if (workOutOfRange) "DOES NOT DELIVER TO" else "DELIVERS TO", 1400)))))
         else UiNode(cls = "FrameLayout", b = 2400, children = listOf(
-            UiNode(id = "address_header", clickable = true, t = 120, b = 230, children = listOf(t(address, 130), t("12 Mall Road, Amritsar", 180))),
+            // Two clickable layers like the real dump: only the inner #location_container opens the saved addresses.
+            UiNode(id = "location_container_outer", clickable = true, t = 158, b = 268, r = 1080, children = listOf(
+                UiNode(id = "address_header", clickable = true, t = 158, b = 263, l = 32, r = 827, children = listOf(t(address, 158), t("12 Mall Road, Amritsar", 219))))),
             UiNode(id = "search_edit_text", desc = "Double tap to open search page", clickable = true, t = 300, b = 400, children = listOf(t("Search \"biryani\"", 310))),
             t("Delivery", 100)))
         "search" -> UiNode(cls = "FrameLayout", b = 2400, children = listOf(

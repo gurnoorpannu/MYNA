@@ -601,7 +601,9 @@ class Executor(
             val texts = root.walk().filter { it.visible }.toList()
             // The app's home header naming the current address ("Home" + the street, top of Zomato's home, 30 Sep).
             val top = root.t + (root.b - root.t) / 5
-            val header = texts.firstOrNull { h -> h.clickable && h.t < top && h.walk().any { c -> c.label?.let { l -> ADDRESS_NAME.matches(l) || named(l) } == true } }
+            // Innermost clickable: Zomato wraps the real header (#location_container) in a full-width clickable that does nothing.
+            val header = texts.filter { h -> h.clickable && h.t < top && h.walk().any { c -> c.label?.let { l -> ADDRESS_NAME.matches(l) || named(l) } == true } }
+                .minByOrNull { (it.r - it.l) * (it.b - it.t) }
             // Already delivering there?
             if (header?.walk()?.any { c -> c.label?.let(named) == true } == true ||
                 texts.any { n -> n.label?.let { l -> delivering(l) && named(l) } == true ||
