@@ -450,8 +450,10 @@ class Executor(
             val best = root.walk().filter { it.visible && it.clickable && !it.editable }.mapNotNull { n ->
                 val title = (n.label ?: Identity.primaryText(n))?.takeIf { it.length >= 12 } ?: return@mapNotNull null
                 val flat = Identity.loose(title)
-                // The search bar echoes the query; a result never equals it exactly. Ads first on the page aren't results.
-                if (flat == Identity.loose(query) || n.id?.contains("search", ignoreCase = true) == true || title in opened) return@mapNotNull null
+                // The search bar echoes the query in the header; below it a row may equal the query exactly (the user typed
+                // the full name "domino's pizza", 30 Sep). Ads first on the page aren't results.
+                val header = n.t < root.t + (root.b - root.t) * 12 / 100
+                if ((flat == Identity.loose(query) && header) || n.id?.contains("search", ignoreCase = true) == true || title in opened) return@mapNotNull null
                 // Ad links are labelled with their web address (…sspa…&keywords=laptop+stand): not a title, not a result.
                 if (URLISH.containsMatchIn(title)) return@mapNotNull null
                 // The row itself says it's an ad ("Sponsored Ad - …", or a "Sponsored" tag inside the row).
@@ -463,6 +465,12 @@ class Executor(
                 opened += best.second
                 sl.level = 1; sl.note = "opened \"${best.second.take(50)}\" (${(best.third * 100).toInt()}% of the search words)"
                 if (device.actor.tap(best.first, root, pkg) is GatedActor.Result.Blocked) throw Stop(Outcome.HANDED_OFF, "blocked opening a result")
+                screen(); sl.status = "ok"; return
+            }
+            // Rows drawn without accessible text (Zomato's suggestions, 30 Sep): read the pixels once before scrolling.
+            if (attempt == 0) ocrFind(com.example.myna_mimicyourinteractionsautomate.recipe.Target(label = query), skipHeader = root.t + (root.b - root.t) * 12 / 100)?.let { n ->
+                sl.level = 4; sl.note = "opened \"${n.label}\" (read from the screen)"
+                if (device.actor.tap(n, root, pkg) is GatedActor.Result.Blocked) throw Stop(Outcome.HANDED_OFF, "blocked opening a result")
                 screen(); sl.status = "ok"; return
             }
             val list = pageScroller(root)
