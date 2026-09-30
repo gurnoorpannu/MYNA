@@ -19,4 +19,16 @@ class HeaderNotGuessedTest {
             t("Domino's Pizza Mania Combo", 1000), t("Pizza Mania Veg", 1100), t("Garlic Breadsticks", 1300), t("1 item added", 2150)))
         assertNull(Identity.inferByDiff(searching, menu))
     }
+
+    @Test fun headerThatScrolledALittleIsStillNotAGuessedTap() {
+        // 19:11 teach: same guess again — the header had moved (collapsing toolbar), so "same place" didn't hold.
+        // Same text AND same id on the next screen = the same element still there, not what was tapped.
+        fun t(s: String, top: Int, id: String? = null, clickable: Boolean = false) =
+            UiNode(text = s, id = id, cls = "View", clickable = clickable, t = top, b = top + 85, l = 31, r = 839)
+        val searching = UiNode(cls = "FrameLayout", b = 2392, r = 1080, children = listOf(t("Domino's Pizza", 531, id = "title", clickable = true),
+            t("Search in Domino's Pizza", 208), t("Margherita", 900), t("Cheese n Corn", 1200)))
+        val menu = UiNode(cls = "FrameLayout", b = 2392, r = 1080, children = listOf(t("Domino's Pizza", 402, id = "title", clickable = true),
+            t("Recommended", 900), t("Domino's Pizza Mania Combo", 1000), t("Pizza Mania Veg", 1100), t("Garlic Breadsticks", 1300), t("1 item added", 2150)))
+        assertNull(Identity.inferByDiff(searching, menu))
+    }
 }
