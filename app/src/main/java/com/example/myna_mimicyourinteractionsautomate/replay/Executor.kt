@@ -71,6 +71,12 @@ class Executor(
         }.filter { it.second > 0 }.maxByOrNull { it.second }?.first
     }
 
+    /** A read can come back empty for a moment while windows change (30 Sep, Amazon): retry briefly before giving up. */
+    private suspend fun screen(): Pair<UiNode, String>? {
+        repeat(SCREEN_TRIES) { device.screen()?.let { return it }; device.pause(400) }
+        return null
+    }
+
     /** Text typed by the previous step and not submitted yet: if the next target doesn't show up, press Enter. */
     private var unsubmitted: String? = null
 
@@ -144,7 +150,7 @@ class Executor(
      * the last hop is often a tap the app never reported while teaching. Every one goes through the gate.
      */
     private suspend fun finish(recipe: Recipe, log: RunLog) {
-        var (root, pkg) = device.screen() ?: throw Stop(Outcome.FAILED, "screen unreadable at the end")
+        var (root, pkg) = screen() ?: throw Stop(Outcome.FAILED, "screen unreadable at the end")
         // Towards the payment screen: close pop-ups (coupons, offers), tap View Cart/Continue, or give the page a second.
         var checkoutTaps = 0
         if (recipe.end == End.PAYMENT_SCREEN) for (i in 0 until 6) {
@@ -165,10 +171,10 @@ class Executor(
                 }
                 else -> device.pause(1_000)   // cart sheet still sliding in / loading
             }
-            device.screen()?.let { root = it.first; pkg = it.second }
+            screen()?.let { root = it.first; pkg = it.second }
         }
         // T6 on Zomato: the address is picked on the cart itself (a Place Order screen: only address taps are allowed).
-        if (wantAddress != null && !addressDone) { pickAddress(log); device.screen()?.let { root = it.first; pkg = it.second } }
+        if (wantAddress != null && !addressDone) { pickAddress(log); screen()?.let { root = it.first; pkg = it.second } }
         if (wantQty > 1 && !qtyDone) log.reason = "couldn't set the quantity to $wantQty — please change it"
         val block = SafetyGate.check(root, pkg)
         when {
@@ -189,7 +195,7 @@ class Executor(
                 if (!device.launchClean(step.pkg!!)) throw Stop(Outcome.FAILED, "couldn't open ${step.pkg} (not installed, or it didn't come to the front)")
                 sl.status = "ok"
             }
-            StepType.KEY -> { device.key(step.key!!); device.screen(); sl.status = "ok" }
+            StepType.KEY -> { device.key(step.key!!); screen(); sl.status = "ok" }
             StepType.TAP, StepType.TYPE -> act(step, slots, sl)
             StepType.GOAL -> when (step.goal) {
                 "search" -> search(step, slots, sl)
@@ -210,7 +216,7 @@ class Executor(
         val seen = mutableMapOf<String, Int>()
         while (true) {
             if (device.stopRequested) throw Stop(Outcome.STOPPED, "stopped by user")
-            val (root, pkg) = device.screen() ?: throw Stop(Outcome.FAILED, "screen unreadable")
+            val (root, pkg) = screen() ?: throw Stop(Outcome.FAILED, "screen unreadable")
             val screen = Identity.screen(root, pkg, null)
             sl.screen = screen.signature
 
@@ -291,7 +297,7 @@ class Executor(
             if (aiHelper && !aiTried) {
                 aiTried = true
                 aiPick(root, step, target)?.let { n -> sl.note = "AI helper picked \"${n.label ?: Identity.primaryText(n) ?: n.id}\""; sl.level = 5
-                    if (device.actor.tap(n, root, pkg) is GatedActor.Result.Done) { device.screen(); sl.status = "ok"; return } }
+                    if (device.actor.tap(n, root, pkg) is GatedActor.Result.Done) { screen(); sl.status = "ok"; return } }
             }
             val soldOut = root.walk().mapNotNull { it.label }.firstOrNull(SOLD_OUT::containsMatchIn)
             throw Stop(Outcome.STUCK, "couldn't find ${describe(target)} on ${screen.title ?: screen.pkg} after $scrolls scrolls" +
@@ -310,7 +316,7 @@ class Executor(
         // 1. Get a search field on screen and type into it.
         var typed = false
         for (attempt in 0 until 3) {
-            val (root, pkg) = device.screen() ?: throw Stop(Outcome.FAILED, "screen unreadable")
+            val (root, pkg) = screen() ?: throw Stop(Outcome.FAILED, "screen unreadable")
             SafetyGate.check(root, pkg)?.let { device.actor.handOff(it); throw Stop(Outcome.HANDED_OFF, it.reason) }
             checkLang(root, step)
             val field = step.target?.let { Finder.find(root, it)?.node?.takeIf { n -> n.editable } }
@@ -331,7 +337,7 @@ class Executor(
         var closedPopup = false
         for (hop in 0 until 5) {
             if (device.now() - start > stepTimeoutMs) break
-            val (root, pkg) = device.screen() ?: throw Stop(Outcome.FAILED, "screen unreadable")
+            val (root, pkg) = screen() ?: throw Stop(Outcome.FAILED, "screen unreadable")
             SafetyGate.check(root, pkg)?.let { device.actor.handOff(it); throw Stop(Outcome.HANDED_OFF, it.reason) }
             val matches = root.walk().filter { it.visible && !it.editable && it.label?.let { l -> Identity.loose(l).contains(want) } == true }.toList()
             val rows = matches.filter { Identity.listItem(it) != null }.sortedWith(
@@ -368,7 +374,7 @@ class Executor(
         // T5: set the count on the sheet's own stepper, before adding (after, "+" asks to repeat the customisation).
         if (wantQty > 1 && !qtyDone) qtyDone = setQty(wantQty, sl)
         for (attempt in 0 until 3) {
-            val (root, pkg) = device.screen() ?: throw Stop(Outcome.FAILED, "screen unreadable")
+            val (root, pkg) = screen() ?: throw Stop(Outcome.FAILED, "screen unreadable")
             SafetyGate.check(root, pkg)?.let { device.actor.handOff(it); throw Stop(Outcome.HANDED_OFF, it.reason) }
             if (!Identity.isModal(root)) { sl.status = "ok"; if (attempt == 0) sl.note = "no sheet open"; qtyAfterSheet(sl); return }
             // A labelled button first ("Add item", or "I'll choose" / "Repeat" on a repeat-customisation sheet),
@@ -395,7 +401,7 @@ class Executor(
             val deadline = device.now() + USER_TAP_WAIT_MS
             while (device.now() < deadline) {
                 if (device.stopRequested) throw Stop(Outcome.STOPPED, "stopped by user")
-                val (root, _) = device.screen() ?: continue
+                val (root, _) = screen() ?: continue
                 if (!Identity.isModal(root)) { sl.status = "ok"; sl.note = "you tapped the sheet's add button (the app ignores accessibility taps there)"; qtyAfterSheet(sl); return }
                 device.pause(500)
             }
@@ -421,7 +427,7 @@ class Executor(
     private suspend fun pickResult(query: String, step: Step, sl: StepLog) {
         val want = Identity.stems(query).ifEmpty { throw Stop(Outcome.FAILED, "empty search") }
         for (attempt in 0..MAX_SCROLLS) {
-            val (root, pkg) = device.screen() ?: throw Stop(Outcome.FAILED, "screen unreadable")
+            val (root, pkg) = screen() ?: throw Stop(Outcome.FAILED, "screen unreadable")
             SafetyGate.check(root, pkg)?.let { device.actor.handOff(it); throw Stop(Outcome.HANDED_OFF, it.reason) }
             checkLang(root, step)
             val best = root.walk().filter { it.visible && it.clickable && !it.editable }.mapNotNull { n ->
@@ -440,7 +446,7 @@ class Executor(
                 opened += best.second
                 sl.level = 1; sl.note = "opened \"${best.second.take(50)}\" (${(best.third * 100).toInt()}% of the search words)"
                 if (device.actor.tap(best.first, root, pkg) is GatedActor.Result.Blocked) throw Stop(Outcome.HANDED_OFF, "blocked opening a result")
-                device.screen(); sl.status = "ok"; return
+                screen(); sl.status = "ok"; return
             }
             val list = pageScroller(root)
             device.scroll(list, forward = true)
@@ -462,7 +468,7 @@ class Executor(
         for (choice in choices) {
             var scrolls = 0
             while (true) {
-                val (root, pkg) = device.screen() ?: return
+                val (root, pkg) = screen() ?: return
                 SafetyGate.check(root, pkg)?.let { device.actor.handOff(it); throw Stop(Outcome.HANDED_OFF, it.reason) }
                 val toggle = Identity.optionToggle(root, choice)
                 if (toggle != null) {
@@ -480,7 +486,7 @@ class Executor(
     /** Wait for the screen to settle and compare with the demo's next screen. A mismatch is noted, not fatal: the next step's finder decides. */
     private suspend fun verify(step: Step, sl: StepLog) {
         val expected = step.next ?: return
-        val (root, pkg) = device.screen() ?: return
+        val (root, pkg) = screen() ?: return
         val now = Identity.screen(root, pkg, null)
         if (now.pkg != expected.pkg || (expected.title != null && now.title != null && now.title != expected.title))
             sl.note = (sl.note?.let { "$it; " } ?: "") + "unexpected screen ${now.title ?: now.pkg} (demo went to ${expected.title ?: expected.pkg})"
@@ -512,7 +518,7 @@ class Executor(
      */
     private suspend fun setQty(n: Int, sl: StepLog): Boolean {
         repeat(n + 4) {
-            val (root, pkg) = device.screen() ?: return false
+            val (root, pkg) = screen() ?: return false
             val area = if (Identity.isModal(root)) Identity.sheetRoot(root) else root
             val steppers = area.walk().filter { it.visible && it.label?.matches(Regex("\\d{1,2}")) == true }.mapNotNull { c ->
                 val box = c.ancestors().take(2).lastOrNull() ?: return@mapNotNull null
@@ -526,7 +532,7 @@ class Executor(
             if (device.actor.tap(btn, root, pkg) !is GatedActor.Result.Done) return false
             lastTapped = btn
             // "+" on a customised dish: "Repeat last customisation?" → Repeat.
-            device.screen()?.let { (r2, p2) ->
+            screen()?.let { (r2, p2) ->
                 if (Identity.isModal(r2)) Identity.sheetRoot(r2).walk().firstOrNull { it.visible && it.clickable && it.walk().any { c -> c.label?.let(REPEAT::containsMatchIn) == true } }
                     ?.let { device.actor.tap(it, r2, p2) }
             }
@@ -548,7 +554,7 @@ class Executor(
         val names = when (name.lowercase()) { "work", "office" -> listOf("work", "office"); else -> listOf(name.lowercase()) }
         val named = { l: String -> names.any { Regex("\\b$it\\b", RegexOption.IGNORE_CASE).containsMatchIn(l) } }
         repeat(5) {
-            val (root, pkg) = device.screen() ?: return
+            val (root, pkg) = screen() ?: return
             val texts = root.walk().filter { it.visible }.toList()
             // Already delivering there?
             if (texts.any { n -> n.label?.let { l -> DELIVERING.containsMatchIn(l) && named(l) } == true ||
@@ -561,7 +567,7 @@ class Executor(
             val tap = if (row != null && (Identity.isModal(root) || opener == null)) row else opener ?: row ?: return
             if (device.actor.tap(tap, root, pkg, addressPick = true) !is GatedActor.Result.Done) return
             // Some apps ask to confirm the picked address.
-            device.screen()?.let { (r2, p2) ->
+            screen()?.let { (r2, p2) ->
                 r2.walk().firstOrNull { it.visible && it.clickable && it.label?.let(CONFIRM_ADDRESS::containsMatchIn) == true }?.let { device.actor.tap(it, r2, p2, addressPick = true) }
             }
         }
@@ -611,6 +617,7 @@ class Executor(
 
     companion object {
         const val MAX_SCROLLS = 5
+        const val SCREEN_TRIES = 3
         private val CLOSED = Regex("\\b(currently (closed|unavailable|not accepting orders)|closed (now|for (today|now|the day))|opens (at|tomorrow|in)\\b|" +
             "temporarily closed|not accepting orders|isn.t accepting orders|not delivering to your|outside (the )?delivery area|store is closed)", RegexOption.IGNORE_CASE)
         private val SOLD_OUT = Regex("\\b(sold out|out of stock|currently unavailable|not available)\\b", RegexOption.IGNORE_CASE)
