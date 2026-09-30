@@ -1,19 +1,27 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample data extraction rules file; uncomment and customize as necessary.
-   See https://developer.android.com/about/versions/12/backup-restore#xml-changes
-   for details.
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+   Android 12+ backup and device transfer. MYNA's data is personal: demo recordings hold screen text, recipes and run
+   logs hold what was ordered and where, chats hold what the user said. None of it leaves the phone.
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
+        <exclude domain="external" path="recordings" />
+        <exclude domain="external" path="recipes" />
+        <exclude domain="external" path="runs" />
+        <exclude domain="external" path="dumps" />
+        <exclude domain="external" path="events.log" />
+        <exclude domain="external" path="debug-tree.txt" />
+        <exclude domain="file" path="chats" />
+        <exclude domain="file" path="chat.txt" />
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <exclude domain="external" path="recordings" />
+        <exclude domain="external" path="recipes" />
+        <exclude domain="external" path="runs" />
+        <exclude domain="external" path="dumps" />
+        <exclude domain="external" path="events.log" />
+        <exclude domain="external" path="debug-tree.txt" />
+        <exclude domain="file" path="chats" />
+        <exclude domain="file" path="chat.txt" />
     </device-transfer>
-    -->
 </data-extraction-rules>
