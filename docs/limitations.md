@@ -1,6 +1,6 @@
 # Known limitations
 
-Honest list, from testing on a Galaxy S25 Ultra (Android 16) with Zomato and Amazon, 23–27 Sep 2026, and on a Nothing Phone (3a) (Android 16), 29–30 Sep 2026 ([test results](test-results.md)).
+Honest list, from testing on a Galaxy S25 Ultra (Android 16) with Zomato and Amazon, 23–27 Sep 2026, and on a Nothing Phone (3a) (Android 16), 29–30 Sep 2026.
 
 ## Apps that resist automation
 

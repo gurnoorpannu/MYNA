@@ -14,7 +14,7 @@ Use the **official PRISM template**. One idea per slide; the diagrams are in [ar
 10. **Safety** — rules-only gate table; tuned on real screens (cart offers, Wallet tab, product colour radios are *not* payment); the one address exception; `GatedActor` is the only way to tap.
 11. **Where AI is used** — replay, finding buttons and the safety gate use no AI; on-device OCR for image-only text; Gemini for naming blanks after a teach (1 call), understanding a voice command (≈ 1 call + embeddings) and last-resort recovery. Offline fallbacks for all.
 12. **Results: the 14 tests** — pass/fail table (fill in after the full test run on 29 Sep).
-13. **Numbers** — teach time vs manual time vs replay time (break-even after N runs, like SUGILITE); AI calls per run; tests (170 JVM + 8 on-device). Measured values: [test-results.md](test-results.md).
+13. **Numbers** — teach time vs manual time vs replay time (break-even after N runs, like SUGILITE); AI calls per run; tests (170 JVM + 8 on-device).
 14. **Research backing** — table below.
 15. **Tested apps & known limitations** — works with any app (nothing app-specific); tested end to end on Zomato and Amazon because they cover the hard cases (image-only text, hidden taps, web views, pop-ups, payment). Top 5 limits from [limitations.md](limitations.md).
 16. **What's next** — phone-call pause, re-teach from a step, more languages (Hindi OCR), on-device LLM.

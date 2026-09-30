@@ -27,7 +27,7 @@ All automation goes through Android's **AccessibilityService** — no app SDKs, 
 
 ## Test cases (T1–T14)
 
-One screen recording per official test case, on a Nothing Phone (3a), Android 16. Details and run logs: [docs/test-results.md](docs/test-results.md).
+One screen recording per official test case (the official checks are from the PRISM Theme 3 evaluation criteria).
 
 | ID | Test | What the judge does | What MYNA must do | Video |
 |---|---|---|---|---|
@@ -79,7 +79,6 @@ Run the tests:
 
 ## Documentation
 
-- [Test results (device runs, timings, bugs found)](docs/test-results.md)
 - [Architecture (with diagrams)](docs/architecture.md)
 - [Known limitations](docs/limitations.md)
 - [Demo video script](docs/demo-script.md)
