@@ -25,6 +25,16 @@ All automation goes through Android's **AccessibilityService** — no app SDKs, 
 
 **[▶ Watch the demo (≤ 5 min, one take)](https://drive.google.com/file/d/1DHrpgInpbme7hSHadp0A3DoQJjBCN2yX/view?usp=sharing)** — (a) teach one flow by voice + taps, (b) replay with the exact command, (c) with a paraphrase, (d) with a changed value, (e) MYNA asking a question.
 
+## Submission files
+
+| What | Where |
+|---|---|
+| Presentation | [Thapar_Legacy_Submission.pptx](Thapar_Legacy_Submission.pptx) |
+| Installable app | [apk/MYNA.apk](apk/MYNA.apk) (Android 11+; turn on MYNA under Settings → Accessibility after installing) |
+| Demo video (≤ 5 min) | [Google Drive](https://drive.google.com/file/d/1DHrpgInpbme7hSHadp0A3DoQJjBCN2yX/view?usp=sharing) |
+| Requirements | [requirements.txt](requirements.txt) |
+| Source code | this repository (`app/`) |
+
 ## Test cases (T1–T14)
 
 One screen recording per official test case (the official checks are from the PRISM Theme 3 evaluation criteria).
@@ -73,7 +83,7 @@ Requirements: Android Studio (JDK 25 bundled), an Android 11+ phone (minSdk 30).
 
 Run the tests:
 
-- `./gradlew :app:testDebugUnitTest` — 170 JVM tests, including full replays against fake Zomato and Amazon screens built from real screen dumps.
+- `./gradlew :app:testDebugUnitTest` — 172 JVM tests, including full replays against fake Zomato and Amazon screens built from real screen dumps.
 - `./gradlew :app:connectedDebugAndroidTest` — 8 on-device tests (app launch and tabs, recipe storage, History, the safety gate on real accessibility nodes).
 
 ## Using it

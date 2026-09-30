@@ -1,0 +1,30 @@
+# MYNA — requirements
+# MYNA is an Android app (Kotlin). There are no Python packages: Gradle downloads every library
+# below automatically on the first build. This file lists what you need to build, run and test it.
+
+## To build
+Android Studio (2025.x or newer, JDK 25 bundled)
+Android SDK Platform 37 (compileSdk 37, targetSdk 37)
+Gradle wrapper (included: ./gradlew), Android Gradle Plugin 9.4.1
+Kotlin 2.2.10
+
+## To run
+Android phone, Android 11 or newer (minSdk 30) — tested on Galaxy S25 Ultra and Nothing Phone (3a), Android 16
+MYNA's Accessibility service switched on (Settings → Accessibility → MYNA)
+Microphone permission (asked on first mic tap)
+Internet for the optional AI features; replay itself works offline
+Optional: Gemini API key in local.properties →  GEMINI_API_KEY=your_key  (and GEMINI_MODEL=gemini-2.5-flash or a newer flash model)
+Apps used in the demo: Zomato (com.application.zomato), Amazon Shopping (in.amazon.mShop.android.shopping)
+
+## Libraries (from gradle/libs.versions.toml)
+androidx.core:core-ktx 1.10.1
+androidx.lifecycle:lifecycle-runtime-ktx 2.6.1
+androidx.activity:activity-compose 1.8.0
+androidx.compose:compose-bom 2026.02.01 (ui, ui-graphics, material3, ui-tooling-preview)
+org.jetbrains.kotlinx:kotlinx-serialization-json 1.9.0
+com.google.mlkit:text-recognition 16.0.1 (on-device OCR)
+org.json:json 20250517 (JVM tests)
+
+## To test
+junit:junit 4.13.2                      ./gradlew :app:testDebugUnitTest            (172 JVM tests)
+androidx.test.ext:junit 1.1.5, espresso-core 3.5.1   ./gradlew :app:connectedDebugAndroidTest  (8 on-device tests)
