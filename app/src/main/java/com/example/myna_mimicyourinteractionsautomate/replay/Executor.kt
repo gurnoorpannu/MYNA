@@ -388,7 +388,7 @@ class Executor(
         for (attempt in 0 until 3) {
             val (root, pkg) = screen() ?: throw Stop(Outcome.FAILED, "screen unreadable")
             SafetyGate.check(root, pkg)?.let { device.actor.handOff(it); throw Stop(Outcome.HANDED_OFF, it.reason) }
-            if (!Identity.isModal(root)) { sl.status = "ok"; if (attempt == 0) sl.note = "no sheet open"; qtyAfterSheet(sl); return }
+            if (!Identity.isModal(root)) { sl.status = "ok"; if (attempt == 0 && sl.note == null) sl.note = "no sheet open"; qtyAfterSheet(sl); return }
             // A labelled button first ("Add item", or "I'll choose" / "Repeat" on a repeat-customisation sheet),
             // then the blank drawn button (exact tree position), then OCR (pixels, can lag an animation).
             val sheet = Identity.sheetRoot(root)   // never the menu's own "ADD" buttons under the sheet
@@ -429,11 +429,15 @@ class Executor(
             val row = Identity.listItem(n) ?: n.ancestors().take(7).firstOrNull { a -> a.walk().any { it !== n && (it.label?.length ?: 0) >= 4 } } ?: return@mapNotNull null
             val flat = Identity.loose(row.walk().mapNotNull { it.label }.joinToString(" "))
             n to want.count { w -> Identity.loose(w).let { it.isNotEmpty() && flat.contains(it) } }
-        }.filter { it.second > 0 }.maxByOrNull { it.second }?.first ?: return
-        sl.note = "tapped ${add.label} on the card matching \"$typed\" (the demo's tap sent no event)"
+        }.filter { it.second > 0 }
+            // The real button (own "ADD" text) beats a wrapper that only holds it: 30 Sep dump, #ll_root around #text_view_title.
+            .sortedWith(compareByDescending<Pair<UiNode, Int>> { it.second }.thenBy { if (it.first.label != null) 0 else 1 }.thenBy { it.first.t })
+            .firstOrNull()?.first ?: return
+        sl.note = "tapped ADD on the card matching \"${typed.trim()}\" (the demo's tap sent no event)"
         if (device.actor.tap(add, root, pkg) is GatedActor.Result.Blocked) throw Stop(Outcome.HANDED_OFF, "blocked adding \"$typed\"")
         lastTapped = add
-        device.pause(SHEET_ANIMATION_MS)
+        // A customisable dish's options sheet slides up a moment later: wait for it (a plain dish is just added).
+        repeat(4) { device.pause(SHEET_ANIMATION_MS); if (screen()?.first?.let(Identity::isModal) == true) return }
     }
 
     /** The sheet had no stepper (or it failed): the menu row now shows "− 1 +", so set the count there. */
