@@ -52,7 +52,13 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
         "home" -> if (hindi) UiNode(cls = "FrameLayout", b = 2400, children = listOf(
             UiNode(id = "search_edit_text", desc = "खोज पेज खोलने के लिए डबल टैप करें", clickable = true, t = 300, b = 400, children = listOf(t("\"बिरयानी\" खोजें", 310))),
             t("डिलीवरी", 100), t("डाइनिंग", 100)))
+        // 30 Sep: Zomato's home header shows the current address ("Home" + the street); tapping it opens the saved addresses.
+        else if (addressPicker) UiNode(cls = "FrameLayout", b = 2400, children = listOf(t("Select an address", 360),
+            UiNode(clickable = true, t = 950, b = 1260, children = listOf(t("Home", 1010), t("50 Harkishan Garden", 1070), t("DELIVERS TO", 960))),
+            UiNode(clickable = true, t = 1380, b = 1690, children = listOf(t("Work", 1490), t("Ranjit Avenue", 1550),
+                t(if (workOutOfRange) "DOES NOT DELIVER TO" else "DELIVERS TO", 1400)))))
         else UiNode(cls = "FrameLayout", b = 2400, children = listOf(
+            UiNode(id = "address_header", clickable = true, t = 120, b = 230, children = listOf(t(address, 130), t("12 Mall Road, Amritsar", 180))),
             UiNode(id = "search_edit_text", desc = "Double tap to open search page", clickable = true, t = 300, b = 400, children = listOf(t("Search \"biryani\"", 310))),
             t("Delivery", 100)))
         "search" -> UiNode(cls = "FrameLayout", b = 2400, children = listOf(
@@ -131,6 +137,7 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
     var sheetQty = 1                  // the sheet's "− 1 +" stepper
     var address = "Home"; var addressPicker = false
     var workOutOfRange = false        // Work is outside the restaurant's delivery area
+    var sheetGoesToCart = false       // 30 Sep: after "Add item" Zomato went straight to the order screen
     var closed = false
     var ignoresA11yTaps = false       // Zomato's real "Add item": only a finger works
     var userTapsSheet = false
@@ -154,11 +161,12 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
             state == "sheet" && n.id == "button_remove" -> sheetQty = maxOf(1, sheetQty - 1)
             n.id == "button_add" || n.id == "text_view_title" -> { sheetFor = n.parent!!.children[2].text!!; sheetQty = 1; state = "sheet" }
             n.id == "address_chip" -> addressPicker = true
+            n.id == "address_header" -> addressPicker = true
             addressPicker && n.children.firstOrNull()?.text in setOf("Home", "Work") -> { address = n.children[0].text!!; addressPicker = false }
             state == "sheet" && n.cls == "ViewGroup" && n.children.firstOrNull()?.text != null && n.t in 900..1100 -> crust = n.children[0].text
             // Add item only works once the required crust is chosen.
             (n.cls == "OcrText" && n.text!!.startsWith("Add item")) || (state == "sheet" && n.l == 360 && n.t == 2025) ->
-                if (crust != null && !ignoresA11yTaps) { repeat(sheetQty) { cart += sheetFor!! }; state = "menu" }
+                if (crust != null && !ignoresA11yTaps) { repeat(sheetQty) { cart += sheetFor!! }; state = if (sheetGoesToCart) "cart" else "menu" }
             n.id == "container" -> state = if (couponPopup) "coupon" else "cart"
             n.id == "coupon_close" -> state = "cart"
             n.id == "cv_checkout_container" -> error("tapped Place Order!")
@@ -240,6 +248,18 @@ class ExecutorTest {
         assertEquals(log.reason, Outcome.HANDED_OFF, log.outcome)
         assertEquals("Work", z.address)
         assertFalse(z.taps.any { it.contains("checkout") })
+    }
+
+    @Test fun t6AddressIsSwitchedAsSoonAsTheAppOpens() = runBlocking {
+        // 30 Sep 19:48 on the phone: the order screen appeared straight after the sheet's Add item, the gate handed off
+        // inside the sheet step, and the address switch (then only done at the end of a run) never happened.
+        // Now it happens on the app's home header right after opening, before any order screen.
+        val z = FakeZomato().apply { sheetGoesToCart = true }
+        val log = Executor(z).run(recipe, demo + ("address" to "Work"))
+        assertEquals(log.reason, Outcome.HANDED_OFF, log.outcome)
+        assertEquals("Work", z.address)
+        assertEquals(listOf("Margherita Pizza"), z.cart)
+        assertTrue(log.steps[0].note.orEmpty(), log.steps[0].note.orEmpty().contains("delivery address set to Work"))   // on "open Zomato"
     }
 
     @Test fun t6WorkOutsideTheDeliveryAreaIsAClearStopNotAFalseSuccess() = runBlocking {

@@ -109,6 +109,8 @@ class Executor(
                         if (wantAddress != null && !addressDone && step.type == StepType.TAP &&
                             (step.target?.label ?: step.target?.key?.value)?.let(CHECKOUT::containsMatchIn) == true) pickAddress(log)
                         runStep(step, slots, sl, recipe)
+                        // T6: switch the delivery address as soon as the app opens (its home header), before any order screen.
+                        if (step.type == StepType.LAUNCH && wantAddress != null && !addressDone) pickAddress(log, into = sl)
                         // T5: "2 margheritas" → set the count right after the item was added (Zomato sets it in the sheet).
                         if (wantQty > 1 && !qtyDone && isAddStep(step) && steps.getOrNull(i + 1)?.goal != "confirm_sheet") {
                             device.pause(800); qtyDone = setQty(wantQty, sl)
@@ -588,7 +590,7 @@ class Executor(
      * T6: switch the delivery address to [wantAddress] ("Work"): open the address picker ("Delivering to Home",
      * "Deliver to …", "Change") and pick the saved address with that name. Gate-checked in address mode.
      */
-    private suspend fun pickAddress(log: RunLog) {
+    private suspend fun pickAddress(log: RunLog, into: StepLog? = null) {
         val name = wantAddress ?: return
         val names = when (name.lowercase()) { "work", "office" -> listOf("work", "office"); else -> listOf(name.lowercase()) }
         val named = { l: String -> names.any { Regex("\\b$it\\b", RegexOption.IGNORE_CASE).containsMatchIn(l) } }
@@ -597,10 +599,17 @@ class Executor(
         repeat(5) {
             val (root, pkg) = screen() ?: return
             val texts = root.walk().filter { it.visible }.toList()
+            // The app's home header naming the current address ("Home" + the street, top of Zomato's home, 30 Sep).
+            val top = root.t + (root.b - root.t) / 5
+            val header = texts.firstOrNull { h -> h.clickable && h.t < top && h.walk().any { c -> c.label?.let { l -> ADDRESS_NAME.matches(l) || named(l) } == true } }
             // Already delivering there?
-            if (texts.any { n -> n.label?.let { l -> delivering(l) && named(l) } == true ||
+            if (header?.walk()?.any { c -> c.label?.let(named) == true } == true ||
+                texts.any { n -> n.label?.let { l -> delivering(l) && named(l) } == true ||
                     (n.label?.let(named) == true && n.parent?.walk()?.any { c -> c.label?.let(delivering) == true } == true) }) {
-                addressDone = true; log.steps += StepLog(log.steps.size + 1, "deliver to $name", "ok", note = "address set"); return
+                addressDone = true
+                if (into != null) into.note = listOfNotNull(into.note, "delivery address set to $name").joinToString("; ")
+                else log.steps += StepLog(log.steps.size + 1, "deliver to $name", "ok", note = "address set")
+                return
             }
             // Picker open (a sheet/list with the saved addresses): tap the one with that name.
             val row = texts.firstOrNull { it.clickable && it.walk().any { c -> c.label?.let(named) == true } }
@@ -609,7 +618,7 @@ class Executor(
                 throw Stop(Outcome.STUCK, "this restaurant doesn't deliver to $name — the address list says \"$it\"")
             }
             val opener = texts.firstOrNull { it.clickable && it.walk().any { c -> c.label?.let { l -> delivering(l) || l.equals("change", true) } == true } }
-            val tap = if (row != null && (Identity.isModal(root) || opener == null)) row else opener ?: row ?: return
+            val tap = if (row != null && (Identity.isModal(root) || (opener == null && header == null))) row else opener ?: header ?: row ?: return
             if (device.actor.tap(tap, root, pkg, addressPick = true) !is GatedActor.Result.Done) return
             // Some apps ask to confirm the picked address.
             screen()?.let { (r2, p2) ->
@@ -669,6 +678,7 @@ class Executor(
         private val ADD_WORD = Regex("^(add|add to (cart|bag|basket))\\b", RegexOption.IGNORE_CASE)
         private val REPEAT = Regex("^(repeat)\\b", RegexOption.IGNORE_CASE)
         private val DELIVERING = Regex("\\b(deliver(ing)?|delivery) (to|at)\\b", RegexOption.IGNORE_CASE)
+        private val ADDRESS_NAME = Regex("^(home|work|office|other)$", RegexOption.IGNORE_CASE)
         private val NOT_DELIVER = Regex("\\b(does ?n.?t|not|cannot|can.?t|won.?t) deliver", RegexOption.IGNORE_CASE)
         private val CONFIRM_ADDRESS = Regex("^(deliver here|use this address|confirm (location|address)|done)\\b", RegexOption.IGNORE_CASE)
         private val AI_SCHEMA = org.json.JSONObject("""{"title":"helper","type":"object","required":["action"],
