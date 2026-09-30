@@ -91,7 +91,9 @@ object IntentMatcher {
     }
 
     private val FILLER = setOf("a", "an", "the", "to", "my", "me", "on", "from", "for", "of", "in", "at", "with", "please", "some", "one",
-        "and", "get", "order", "add", "buy", "search", "find", "show", "can", "you", "i", "want", "need", "would", "like", "it", "cart", "app")
+        "and", "get", "order", "add", "buy", "search", "find", "show", "can", "you", "i", "want", "need", "would", "like", "it", "cart", "app",
+        // other ways to say "add" (30 Sep: "put a phone cover…" made "put" a value)
+        "put", "place", "keep", "include", "drop", "throw", "pop", "stick", "grab", "bring", "give", "gimme", "wanna", "into", "inside", "onto")
 
     /**
      * No-AI fill: words that match last time's value keep it ("dominos" ≈ "Domino's"); words that aren't part of the
@@ -101,7 +103,11 @@ object IntentMatcher {
     fun fillByTemplate(utterance: String, r: Recipe): Fill {
         val loose = { x: String -> x.lowercase().filter { it.isLetterOrDigit() } }
         val appWords = r.app.split('.').map(loose).toSet()
-        val template = (r.summary ?: r.utterance).replace(Regex("\\{\\w+\\}"), " ").split(Regex("\\s+")).map(loose).toSet()
+        // Fixed wording: the template, plus words of the taught command that aren't a blank's value ("pizza" in
+        // "order a margherita pizza from Domino's" is not a restaurant).
+        val valueWords = r.slots.values.flatMap { listOfNotNull(it.value, it.default) }.flatMap { it.split(Regex("\\s+")) }.map(loose).toSet()
+        val template = (r.summary ?: r.utterance).replace(Regex("\\{\\w+\\}"), " ").split(Regex("\\s+")).map(loose).toSet() +
+            r.utterance.split(Regex("\\s+")).map(loose).filter { it !in valueWords }
         var rest = utterance
         val values = mutableMapOf<String, String>(); val said = mutableSetOf<String>()
         for ((k, v) in r.slots) {   // repeated values first
