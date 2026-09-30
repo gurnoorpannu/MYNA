@@ -121,16 +121,21 @@ object Compiler {
     private fun looseRegex(spoken: String): Regex? = loose(spoken).takeIf { it.isNotEmpty() }
         ?.map { Regex.escape(it.toString()) }?.joinToString("[^\\p{L}\\p{N}]*")?.let { Regex(it, RegexOption.IGNORE_CASE) }
 
+    /** [text] without the part where [spoken] was typed (also when typed shorter: "nothing 3" for "nothing phone 3"). */
     private fun removeLoose(text: String, spoken: String): String? =
-        looseRegex(spoken)?.find(text)?.let { text.removeRange(it.range).trim() }?.takeIf { it.length >= 3 }
+        typedPart(text, spoken)?.let { text.removeRange(it).trim() }?.takeIf { it.length >= 3 }
 
     /**
      * "s25ultra phone cases" with product = "phone case" → "s25ultra {product}s". When the typed text is shorter than
      * what was said ("nothing3a" for "nothing phone 3a"), only the typed words made of the spoken words are replaced:
      * "phone case nothing3a" → "phone case {item}". Whole text only if no typed word comes from the blank at all.
      */
-    fun template(text: String, spoken: String, ref: String): String {
-        looseRegex(spoken)?.find(text)?.let { return text.replaceRange(it.range, ref) }
+    fun template(text: String, spoken: String, ref: String): String =
+        typedPart(text, spoken)?.let { text.replaceRange(it, ref) } ?: ref
+
+    /** Where [spoken] was typed in [text]: in one piece, else the run of typed words spelled by the spoken words in order. */
+    fun typedPart(text: String, spoken: String): IntRange? {
+        looseRegex(spoken)?.find(text)?.let { return it.range }
         val said = words(spoken).map(::loose).filter { it.isNotEmpty() }
         val tokens = Regex("\\S+").findAll(text).toList()
         var best: IntRange? = null
@@ -139,7 +144,7 @@ object Compiler {
             val used = usedWords(loose(tokens.subList(i, j + 1).joinToString("") { it.value }), said) ?: continue
             if (used > bestUsed) { best = tokens[i].range.first..tokens[j].range.last; bestUsed = used }
         }
-        return best?.let { text.replaceRange(it, ref) } ?: ref
+        return best
     }
 
     /** How many of [said] (in order, some may be skipped) spell exactly [s]; null if they can't. */
