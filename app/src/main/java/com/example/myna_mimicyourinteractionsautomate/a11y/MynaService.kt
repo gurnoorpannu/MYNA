@@ -445,12 +445,33 @@ class MynaService : AccessibilityService(), Device {
         if (live?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true) return true
         // Click refused (custom views): tap the centre of its bounds.
         val x = (n.l + n.r) / 2f; val y = (n.t + n.b) / 2f
-        val path = Path().apply { moveTo(x, y) }
-        return dispatchGesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, 80)).build(),
-            object : GestureResultCallback() {
-                override fun onCompleted(g: GestureDescription) { Log.d(TAG, "gesture tap ($x,$y) completed on $n") }
-                override fun onCancelled(g: GestureDescription) { Log.w(TAG, "gesture tap ($x,$y) CANCELLED on $n") }
-            }, null)
+        return gesture(Path().apply { moveTo(x, y) }, 80, "tap ($x,$y) on $n")
+    }
+
+    /**
+     * Inject a tap/swipe with MYNA's own overlays letting touches through. 30 Sep: an OCR tap on "Domino's Pizza" at
+     * (474,433) landed on the run bar's ■ Stop button, which covers y≈300–440, and the run stopped itself.
+     */
+    private fun gesture(path: Path, ms: Long, what: String): Boolean {
+        passThroughOverlays(true)
+        main.postDelayed({   // let the window flag reach the input system before the touch is injected
+            val sent = dispatchGesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, ms)).build(),
+                object : GestureResultCallback() {
+                    override fun onCompleted(g: GestureDescription) { Log.d(TAG, "gesture $what completed"); passThroughOverlays(false) }
+                    override fun onCancelled(g: GestureDescription) { Log.w(TAG, "gesture $what CANCELLED"); passThroughOverlays(false) }
+                }, null)
+            if (!sent) passThroughOverlays(false)
+        }, 120)
+        return true
+    }
+
+    private fun passThroughOverlays(on: Boolean) {
+        val wm = getSystemService(WindowManager::class.java)
+        listOfNotNull(runOverlay, handOffView).forEach { v ->
+            val lp = v.layoutParams as? WindowManager.LayoutParams ?: return@forEach
+            lp.flags = if (on) lp.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE else lp.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+            runCatching { wm.updateViewLayout(v, lp) }
+        }
     }
 
     /** Only called by [actor], after the gate said yes. */
@@ -559,8 +580,7 @@ class MynaService : AccessibilityService(), Device {
         val x = (list.l + list.r) / 2f
         val (from, to) = if (forward) list.t + (list.b - list.t) * 0.75f to list.t + (list.b - list.t) * 0.25f
                          else list.t + (list.b - list.t) * 0.25f to list.t + (list.b - list.t) * 0.75f
-        val path = Path().apply { moveTo(x, from); lineTo(x, to) }
-        return dispatchGesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, 350)).build(), null, null)
+        return gesture(Path().apply { moveTo(x, from); lineTo(x, to) }, 350, "swipe in $list")
     }
 
     override suspend fun ocr(): List<OcrLine> {
