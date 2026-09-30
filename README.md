@@ -29,7 +29,7 @@ All automation goes through Android's **AccessibilityService** — no app SDKs, 
 
 | What | Where |
 |---|---|
-| Presentation | [Thapar_Legacy_Submission.pptx](Thapar_Legacy_Submission.pptx) |
+| Presentation | [Thapar_Legacy_Submission.pdf](Thapar_Legacy_Submission.pdf) |
 | Installable app | [apk/MYNA.apk](apk/MYNA.apk) (Android 11+; turn on MYNA under Settings → Accessibility after installing) |
 | Demo video (≤ 5 min) | [Google Drive](https://drive.google.com/file/d/1DHrpgInpbme7hSHadp0A3DoQJjBCN2yX/view?usp=sharing) |
 | Requirements | [requirements.txt](requirements.txt) |
