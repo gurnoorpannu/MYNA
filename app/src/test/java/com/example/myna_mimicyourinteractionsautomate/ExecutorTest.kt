@@ -61,10 +61,12 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
             // Two clickable layers like the real dump: only the inner #location_container opens the saved addresses.
             UiNode(id = "location_container_outer", clickable = true, t = 158, b = 268, r = 1080, children = listOf(
                 UiNode(id = "address_header", clickable = true, t = 158, b = 263, l = 32, r = 827, children = listOf(t(address, 158), t("12 Mall Road, Amritsar", 219))))),
-            UiNode(id = "search_edit_text", desc = "Double tap to open search page", clickable = true, t = 300, b = 400, children = listOf(t("Search \"biryani\"", 310))),
+            UiNode(id = "search_edit_text", desc = "Double tap to open search page", clickable = true, t = 300, b = 400, children = listOfNotNull(t("Search \"biryani\"", 310),
+                // The real home bar hides an EditText with the same id as the search page's.
+                if (slowSearchPage) UiNode(id = "edittext", editable = true, t = 300, b = 400) else null)),
             t("Delivery", 100)))
         "search" -> UiNode(cls = "FrameLayout", b = 2400, children = listOf(
-            UiNode(id = "edittext", hint = "Restaurant name or a dish...", text = "Type to search restaurants or dishes", editable = true, clickable = true, t = 100, b = 200),
+            UiNode(id = "edittext", hint = "Restaurant name or a dish...", text = typed.ifEmpty { "Type to search restaurants or dishes" }, editable = true, clickable = true, t = 100, b = 200),
             UiNode(cls = "ComposeView", scrollable = true, t = 300, b = 2400)))      // text-less suggestions
         // Options sheet after Add: the "Add item ₹109" button is a blank box (only OCR can read it).
         "sheet" -> UiNode(cls = "FrameLayout", b = 2400, children = listOf(
@@ -82,7 +84,7 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
                 UiNode(cls = "ViewGroup", l = 360, t = 2025, r = 1046, b = 2171)))))
         // Results page (after Enter or a suggestion tap): accessible rows, the restaurant twice.
         "results" -> UiNode(cls = "FrameLayout", b = 2400, children = listOf(
-            UiNode(id = "edittext", text = "Type to search restaurants or dishes", editable = true, t = 100, b = 200),
+            UiNode(id = "edittext", text = typed, editable = true, t = 100, b = 200),   // results keep the query in the box
             UiNode(cls = "RecyclerView", scrollable = true, t = 250, b = 2400, children = listOf(
                 UiNode(id = "top_row", clickable = true, t = 250, b = 350, children = listOf(t("Domino's Pizza", 260))),
                 UiNode(id = "pizza_hut", clickable = true, t = 400, b = 500, children = listOf(t("Pizza Hut", 410))),
@@ -121,7 +123,9 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
     var splashReads = 0               // 30 Sep: Zomato shows a splash/loading screen for a moment after launch
     override suspend fun screen() = (if (state == "home" && splashReads-- > 0) UiNode(cls = "FrameLayout", b = 2400, children = listOf(t("zomato", 1100)))
         else build()) to "com.application.zomato"
-    override val actor = GatedActor(click = ::click, setText = { n, s, _ -> if (state == "menu") menuSearch = s else typed = s; n.id == "edittext" }, onBlocked = { blocks += it.reason })
+    override val actor = GatedActor(click = ::click, setText = { n, s, _ ->
+        when (state) { "menu" -> menuSearch = s; "home" -> state = "search"   /* typed into the old screen: lost */; else -> typed = s }
+        n.id == "edittext" }, onBlocked = { blocks += it.reason })
     override suspend fun launchClean(pkg: String) = true.also { state = "home" }
     override fun key(key: SystemKey) {}
     override fun scroll(list: UiNode, forward: Boolean) = false
@@ -145,6 +149,7 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
     var closed = false
     var ignoresA11yTaps = false       // Zomato's real "Add item": only a finger works
     var userTapsSheet = false
+    var slowSearchPage = false        // 29 Sep, Galaxy M34 on slow net: the search page opens late
     var bareSheet = false             // 27 Sep: the sheet showed no Add item button we could find at all
     val prompts = mutableListOf<String>()
     override fun prompt(text: String?) { text?.let { prompts += it } }
@@ -155,7 +160,7 @@ class FakeZomato(var popup: Boolean = false, var hindi: Boolean = false) : Devic
         when {
             n.label == "Not now" -> popup = false
             n.label == "Order now" || n.label == "Apply coupon" -> error("tapped the pop-up's main action!")
-            n.id == "search_edit_text" -> state = "search"
+            n.id == "search_edit_text" -> if (!slowSearchPage) state = "search"   // slow: opens only after we've typed
             n.id == "button1" -> menuSearch = ""
             n.cls == "OcrText" && n.text == "Domino's Pizza" -> state = "results"
             n.id == "top_row" || n.id == "res_card" -> state = "menu"
@@ -244,6 +249,13 @@ class ExecutorTest {
         assertEquals(log.reason, Outcome.HANDED_OFF, log.outcome)
         assertEquals(listOf("Margherita Pizza", "Margherita Pizza"), z.cart)
         assertTrue(z.prompts.single().contains("tap"))
+    }
+
+    @Test fun searchPageOpeningLateGetsTheQueryTypedAgain() = runBlocking {
+        val z = FakeZomato().apply { slowSearchPage = true }
+        val log = Executor(z).run(recipe, demo)
+        assertEquals(log.reason, Outcome.HANDED_OFF, log.outcome)
+        assertEquals("Domino's", z.typed)
     }
 
     @Test fun t6AddressIsSwitchedOnTheCartButPlaceOrderIsNeverTapped() = runBlocking {

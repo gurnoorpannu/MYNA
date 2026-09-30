@@ -335,6 +335,12 @@ class Executor(
             if (field != null) {
                 if (device.actor.type(field, query, root, pkg, submit = true) !is GatedActor.Result.Done)
                     throw Stop(Outcome.FAILED, "couldn't type \"$query\" into the search box")
+                // Slow phone/network (29 Sep, Galaxy M34): the tap's search page opened AFTER we typed into the old
+                // screen's box, leaving the new box empty. The query must be on screen, else type again.
+                device.pause(800)
+                // The box itself, not any text: a "Domino's …" recent-search chip is on screen either way.
+                val landed = device.screen()?.first?.walk()?.any { n -> n.visible && n.editable && n.text?.let { Identity.loose(it).contains(Identity.loose(query)) } == true } == true
+                if (!landed && attempt < 2) { sl.note = "typed again: the search page opened late"; continue }
                 if (pick == null) lastQuery = query   // with a pick we land on its page, not on a results list
                 typed = true; break
             }
@@ -346,7 +352,10 @@ class Executor(
         // 2. Hop through results (suggestions → results → page) until pick is a heading, not a row.
         val want = Identity.loose(pick)
         var closedPopup = false
-        for (hop in 0 until 5) {
+        // Up to 5 taps; between them, wait only while the next page is still loading (slow net), up to the step timeout.
+        var hop = 0
+        var arrivedReads = 0
+        while (hop < 5) {
             if (device.now() - start > stepTimeoutMs) break
             val (root, pkg) = screen() ?: throw Stop(Outcome.FAILED, "screen unreadable")
             SafetyGate.check(root, pkg)?.let { device.actor.handOff(it); throw Stop(Outcome.HANDED_OFF, it.reason) }
@@ -357,12 +366,17 @@ class Executor(
             rows.firstOrNull()?.let { r -> (Identity.listItem(r) ?: r.ancestors().take(3).lastOrNull() ?: r).walk()
                 .mapNotNull { it.label }.firstOrNull(CLOSED::containsMatchIn)
                 ?.let { throw Stop(Outcome.STUCK, "$pick isn't taking orders right now — the app says \"${it.take(80)}\"") } }
-            // A page naming the pick with no search box left is the pick's own page, even when its header is a list
-            // (Zomato's restaurant title sits in a scrollable GridView; suggestions/results always keep the search box).
-            val heading = matches.any { Identity.listItem(it) == null } ||
-                (hop > 0 && matches.isNotEmpty() && root.walk().none { it.visible && it.editable })
+            // Left the search screens (no box holding the query) and the page names the pick: arrived. On the M34 the
+            // restaurant's name sits inside the menu's scrolling list, so it looks like a row, not a heading.
+            val onSearch = root.walk().any { it.visible && it.editable && it.text?.let { t -> Identity.loose(t).contains(Identity.loose(query)) } == true }
+            val heading = matches.any { Identity.listItem(it) == null } || (!onSearch && matches.isNotEmpty())
             // Arrived: after at least one hop, the page names the pick as a heading (other "Domino's…" rows don't matter).
-            if (heading && hop > 0) { sl.status = "ok"; sl.note = "opened \"$pick\" after $hop tap(s)"; return }
+            // Same verdict twice, 0.7 s apart: mid-transition frames (box gone, old rows still there) fooled one read.
+            if (heading && hop > 0) {
+                if (++arrivedReads >= 2) { sl.status = "ok"; sl.note = "opened \"$pick\" after $hop tap(s)"; return }
+                device.pause(LOADING_POLL_MS); continue
+            }
+            arrivedReads = 0
             val tapTarget = rows.firstOrNull()?.let(Finder::tappable)
                 ?: if (heading && hop > 0) null else ocrFind(com.example.myna_mimicyourinteractionsautomate.recipe.Target(label = pick),
                     skipHeader = root.t + (root.b - root.t) * 12 / 100)
@@ -370,10 +384,11 @@ class Executor(
                 if (heading) { sl.status = "ok"; sl.note = "opened \"$pick\" after $hop tap(s)"; return }
                 // Pop-up over the results/page: close-type buttons only (T7).
                 Finder.closeButton(root)?.takeIf { !closedPopup }?.let { closedPopup = true; device.actor.tap(it, root, pkg) }
-                continue   // results still loading
+                device.pause(LOADING_POLL_MS); continue   // results still loading
             }
             sl.level = if (tapTarget.cls == "OcrText") 4 else 1
             if (device.actor.tap(tapTarget, root, pkg) is GatedActor.Result.Blocked) throw Stop(Outcome.HANDED_OFF, "blocked while opening $pick")
+            hop++
         }
         throw Stop(Outcome.STUCK, "searched \"$query\" but couldn't open \"$pick\"")
     }
@@ -692,6 +707,7 @@ class Executor(
         const val SHEET_ANIMATION_MS = 800L
         const val USER_TAP_WAIT_MS = 30_000L
         /** Sheet buttons in order of preference: confirm → pick options fresh (demo defaults) → repeat last time. */
+        private const val LOADING_POLL_MS = 700L
         private val SHEET_BUTTONS = listOf(
             Regex("^(add item|add to cart|add|done|confirm|continue|save|apply|update)\\b", RegexOption.IGNORE_CASE),
             Regex("^(i.ll choose|choose|add new|customi[sz]e)\\b", RegexOption.IGNORE_CASE),
