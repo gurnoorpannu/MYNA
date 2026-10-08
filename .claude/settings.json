@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Firecrawl is the default web tool for this project. For any step that touches the web (looking up docs, libraries, APIs, error messages, URLs, research, or anything you would otherwise use WebFetch/WebSearch for), use the Firecrawl plugin skills/commands (search, scrape, crawl, map, agent) instead of the built-in WebFetch/WebSearch tools. The user should never have to ask for Firecrawl explicitly. If the Firecrawl plugin is not installed or has no API key, say so once and fall back to the built-in tools.'"
+          }
+        ]
+      }
+    ]
+  }
+}
